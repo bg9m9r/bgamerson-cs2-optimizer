@@ -6,6 +6,96 @@
     command - all projected from the single decision list.
 #>
 
+function Format-OptReportValue {
+    <#
+        Renders a value for a markdown table cell: short, unambiguous, and safe
+        to sit inside backticks.
+    #>
+    [CmdletBinding()][OutputType([string])]
+    param([AllowNull()]$Value)
+
+    if ($null -eq $Value)      { return '(none)' }
+    if ($Value -is [byte[]])   { return "$($Value.Length) bytes: " + (($Value | Select-Object -First 8 | ForEach-Object { '{0:X2}' -f $_ }) -join ' ') }
+    if ($Value -is [string[]]) { return ($Value -join ' ; ') }
+    if ($Value -is [bool])     { return $(if ($Value) { 'True' } else { 'False' }) }
+
+    $s = [string]$Value
+    if ([string]::IsNullOrEmpty($s)) { return '(empty)' }
+    if ($s.Length -gt 60) { $s = $s.Substring(0, 57) + '...' }
+    # A backtick inside a backtick-quoted cell would break the code span.
+    return ($s -replace '`', "'")
+}
+
+function Format-OptReportCell {
+    <#
+        Escapes a plain markdown cell. The pipe is the killer: registry paths
+        are fine, but multi-string values and command lines can contain one and
+        would silently split the row into extra columns.
+    #>
+    [CmdletBinding()][OutputType([string])]
+    param([AllowNull()][string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) { return '' }
+    $t = $Text -replace '\|', '\|'
+    if ($t.Length -gt 78) { $t = $t.Substring(0, 75) + '...' }
+    return $t
+}
+
+function Get-OptSectionRationale {
+    <#
+        What each section does and why, in plain language.
+
+        Kept as a lookup keyed by section number rather than threading a
+        rationale string through ~90 call sites. Honest about the items that
+        are not expected to do anything measurable - a report that oversells is
+        worse than no report.
+    #>
+    [CmdletBinding()][OutputType([hashtable])]
+    param([Parameter(Mandatory)][string]$Section)
+
+    $map = @{
+        '2' = @{
+            Title = 'Power and CPU'
+            Why   = 'Stops Windows from parking cores, downclocking, or powering down devices mid-match. Minimum and maximum processor state go to 100% so the CPU never drops to a low P-state between rounds, USB selective suspend and PCIe link power management are turned off so peripherals and the GPU link stay awake, and Fast Startup is disabled. Fast Startup matters most on a dual-boot machine: it leaves NTFS in a dirty state, so the other OS refuses to mount the partition or mounts it read-only.'
+        }
+        '3' = @{
+            Title = 'GPU and display'
+            Why   = 'Hardware-accelerated GPU scheduling is enabled, which the AMD Anti-Lag and NVIDIA Reflex low-latency paths depend on. Game DVR and background recording are switched off (they capture continuously and cost frames), while Game Mode is left ON because on Windows 11 it genuinely suppresses background scheduler interference. For cs2.exe specifically, fullscreen optimizations are disabled so the game gets a true exclusive-fullscreen path, and Auto HDR is turned off because it adds latency and skews colours. Refresh-rate enforcement lives here too - the single highest-value item in the whole script when it fires.'
+        }
+        '4' = @{
+            Title = 'Scheduler, timers and MMCSS'
+            Why   = 'The Multimedia Class Scheduler settings raise the priority the OS grants a foreground game for GPU work and disk I/O. NetworkThrottlingIndex is the one with a real, measurable effect: by default Windows throttles non-multimedia network traffic to about 10 packets per millisecond, and disabling that matters for a high-packet-rate title like CS2. Be sceptical of Win32PrioritySeparation - Windows 11 already defaults to the short, variable quantum this sets, so it makes existing behaviour explicit rather than changing it. Section 4.3 only ever REMOVES boot timer settings left behind by other optimization scripts; it never adds any.'
+        }
+        '5' = @{
+            Title = 'Memory and storage'
+            Why   = 'A fixed-size pagefile (minimum = maximum) avoids the mid-match stalls that happen when Windows resizes a system-managed one. It is never disabled: CS2 and the FACEIT client both benefit from committed backing store, and disabling it kills crash dumps. It stays on the boot volume because kernel crash dumps require it there. Filesystem settings stop the last-access-time write on every file read and disable legacy 8.3 name generation, and TRIM is explicitly confirmed ON. Steam library folders are excluded from the search indexer so it stops crawling tens of gigabytes of game assets.'
+        }
+        '6' = @{
+            Title = 'Input and process priority'
+            Why   = 'Mouse acceleration ("Enhance pointer precision") is turned off and pointer speed set to the 6/11 notch, which is the only setting that applies no scaling multiplier to raw input. The accessibility flags stop the Sticky Keys dialog appearing mid-round when you hold shift. CS2 process priority is raised to High through Image File Execution Options - the anti-cheat-safe way to do it, because the kernel applies it at process creation and nothing is injected into the game. CPU affinity is never pinned on any hardware.'
+        }
+        '7' = @{
+            Title = 'Network'
+            Why   = 'Only the adapter carrying the default route is touched. Interrupt moderation batches incoming packets to reduce CPU load, which directly adds latency, so it goes off. The power-saving features - Energy-Efficient Ethernet, Green Ethernet, Gigabit Lite - let the NIC negotiate down or idle the link, and on a multi-gigabit adapter they are the usual reason it settles at 1 Gbps. Flow control lets a switch pause your traffic. TCP auto-tuning is deliberately set back to *normal*: many optimization scripts disable it, which is a genuine throughput regression.'
+        }
+        '8' = @{
+            Title = 'Background load and telemetry'
+            Why   = 'Be honest about this one: it buys disk, RAM and boot time - not frames. Scheduled tasks are disabled rather than deleted so they stay reversible, and the compatibility appraiser, customer-experience uploads and error reporting are the ones that wake up and scan. The ETW autologger sessions are the part with a genuinely measurable cost, since they run continuously from boot and write to disk. Defender and anti-cheat trace sessions are deliberately left alone. Windows Update is also stopped from replacing your chosen GPU driver with a generic WHQL one mid-season.'
+        }
+        '9' = @{
+            Title = 'Defender exclusions'
+            Why   = 'Real-time scanning of shader-cache writes and VPK reads is a measurable stutter source, because the game touches those files constantly during a match. Excluding the Steam library and the vendor shader-cache directory gets most of the benefit of "disable Defender" with none of the cost - real-time protection stays fully on, which section 0 requires. FACEIT directories are deliberately left scanned.'
+        }
+        '13' = @{
+            Title = 'Reverting harmful tweaks'
+            Why   = 'These are not optimizations. They are repairs to damage left behind by other CS2 "optimization" scripts - a disabled pagefile, disabled TCP auto-tuning, a disabled ScheduledDefrag task (which stops TRIM on an SSD), or a hypervisorlaunchtype of Off, which silently prevents VBS from running and makes the machine fail the FACEIT check with no obvious cause.'
+        }
+    }
+
+    if ($map.ContainsKey($Section)) { return $map[$Section] }
+    return @{ Title = "Section $Section"; Why = 'See the spec for the reasoning behind this section.' }
+}
+
 function Write-OptMarkdownReport {
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
@@ -55,23 +145,50 @@ function Write-OptMarkdownReport {
         }
     }
 
-    # --- applied changes by tier ---
+    # --- every change, with its previous value, grouped and explained ---
     & $add '## Changes'
     & $add ''
-    $applied = @($State.Decisions | Where-Object { $_.Decision -eq 'Applied' })
-    if ($applied.Count -eq 0) {
+    $changes = @($State.Changes)
+    if ($changes.Count -eq 0) {
         & $add '_No changes were applied._'
         & $add ''
     }
     else {
-        & $add "$($applied.Count) change(s)$(if ($State.DryRun) { ' would be applied' } else { ' applied' }):"
+        $verb = if ($State.DryRun) { 'would be applied' } else { 'applied' }
+        & $add "$($changes.Count) change(s) $verb, grouped by section. Every row shows the value **before** this run next to the value being set, so none of it is a black box."
         & $add ''
-        & $add '| Section | Change | Detail |'
-        & $add '|---|---|---|'
-        foreach ($a in $applied) {
-            & $add "| $($a.Section) | $($a.Title) | $($a.Reason -replace '\|', '\|') |"
+        & $add 'A dash under **Was** means the value did not exist beforehand - rolling back deletes it rather than restoring anything.'
+        & $add ''
+
+        # Grouped by top-level section so the rationale is stated once per area
+        # rather than repeated on every row.
+        $groups = $changes | Group-Object { ([string]$_.Section -split '\.')[0] } |
+                  Sort-Object { [int]$_.Name }
+
+        foreach ($g in $groups) {
+            $rationale = Get-OptSectionRationale -Section $g.Name
+            & $add "### Section $($g.Name) - $($rationale.Title)"
+            & $add ''
+            & $add $rationale.Why
+            & $add ''
+            & $add '| # | Setting | Location | Was | Now | Reboot |'
+            & $add '|---|---|---|---|---|---|'
+
+            foreach ($c in ($g.Group | Sort-Object { [int]$_.Id })) {
+                $old = if (-not $c.ExistedBefore) { '_-_' }
+                       else { '`' + (Format-OptReportValue (ConvertFrom-OptStorableValue $c.OldValue)) + '`' }
+                $new = if ($null -eq $c.NewValue) { '_(removed)_' }
+                       else { '`' + (Format-OptReportValue (ConvertFrom-OptStorableValue $c.NewValue)) + '`' }
+
+                & $add ("| {0} | {1} | {2} | {3} | {4} | {5} |" -f `
+                    $c.Id,
+                    (Format-OptReportCell ([string]$c.Name)),
+                    (Format-OptReportCell ([string]$c.Path)),
+                    $old, $new,
+                    $(if ($c.RequiresReboot) { 'yes' } else { '' }))
+            }
+            & $add ''
         }
-        & $add ''
     }
 
     # --- already correct ---
