@@ -61,6 +61,20 @@
     .\Optimize-CS2.ps1 -Tier Safe
     .\Optimize-CS2.ps1 -Tier Aggressive -Sections 7
     .\Optimize-CS2.ps1 -Rollback
+
+.NOTES
+    BGamerson's CS2 Optimizer Script
+    https://github.com/bg9m9r/bgamerson-cs2-optimizer
+
+    Copyright (c) 2026 BGamerson. Released under the MIT License.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. This script
+    modifies system configuration. Review the -DryRun output before applying
+    anything, and use it at your own risk.
+
+    This notice lives in the script itself because the built file is designed to
+    be downloaded and carried around on its own, with no LICENSE or README
+    beside it.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(

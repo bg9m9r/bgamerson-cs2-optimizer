@@ -236,3 +236,15 @@ Read the report's "Did this actually help?" section before measuring anything.
 If a frame-time capture shows nothing outside run-to-run variance, that's the expected result, not a failed application.
 
 Verify anti-cheat by launching the FACEIT AC client **on its own, without queueing** — it runs its full system check at startup, which is zero ban surface and directly tests the thing you care about. Keep measurement tooling and anti-cheat sessions strictly non-overlapping.
+
+---
+
+## License
+
+[MIT](LICENSE) — Copyright (c) 2026 BGamerson.
+
+Use it, fork it, ship it, sell it. Just keep the copyright notice.
+
+**No warranty.** This script modifies system configuration. It's built defensively — everything is gated on detected hardware, recorded to a manifest, and reversible with `-Rollback` — but you are running it on your own machine at your own risk. Read the `-DryRun` output before applying anything.
+
+Nothing here is affiliated with or endorsed by Valve, FACEIT, AMD, NVIDIA, Intel or Microsoft.
