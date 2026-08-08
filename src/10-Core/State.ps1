@@ -76,6 +76,12 @@ function New-OptState {
 
         ChangeOrdinal = 0
         SectionStack  = New-Object 'System.Collections.Generic.List[string]'
+
+        # Echo individual decisions to the console as they happen. Off by
+        # default so the test suite stays quiet; 90-Main turns it on for real
+        # runs. Without it a section prints its header and then nothing, which
+        # reads as "this section did no work".
+        ConsoleDecisions = $false
     }
 
     return $state

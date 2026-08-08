@@ -106,16 +106,25 @@ function Invoke-OptMain {
         }
 
         # --- phase 5+: sections ----------------------------------------------
-        Invoke-OptSection02 -State $State          # power
-        Invoke-OptSection03 -State $State          # GPU, including 3.8 refresh early
-        Invoke-OptSection05 -State $State          # memory + storage
-        Invoke-OptSection04 -State $State          # scheduler (4.3 bcdedit gated inside)
-        Invoke-OptSection06 -State $State          # input
-        Invoke-OptSection08 -State $State          # background, telemetry, tasks
-        Invoke-OptSection07 -State $State          # network
-        Invoke-OptSection09 -State $State          # Defender exclusions
-        Invoke-OptSection10 -State $State          # VBS compliance - report only
-        Invoke-OptSection13 -State $State          # revert known-harmful tweaks
+        # Each section echoes its own decisions; the summary line afterwards
+        # accounts for the already-correct and gated-off outcomes that are
+        # deliberately not printed one by one.
+        $sectionRuns = @(
+            @{ N = '2';  Run = { Invoke-OptSection02 -State $State } }   # power
+            @{ N = '3';  Run = { Invoke-OptSection03 -State $State } }   # GPU, incl. 3.8 refresh early
+            @{ N = '5';  Run = { Invoke-OptSection05 -State $State } }   # memory + storage
+            @{ N = '4';  Run = { Invoke-OptSection04 -State $State } }   # scheduler (4.3 bcdedit gated inside)
+            @{ N = '6';  Run = { Invoke-OptSection06 -State $State } }   # input
+            @{ N = '8';  Run = { Invoke-OptSection08 -State $State } }   # background, telemetry, tasks
+            @{ N = '7';  Run = { Invoke-OptSection07 -State $State } }   # network
+            @{ N = '9';  Run = { Invoke-OptSection09 -State $State } }   # Defender exclusions
+            @{ N = '10'; Run = { Invoke-OptSection10 -State $State } }   # VBS compliance - report only
+            @{ N = '13'; Run = { Invoke-OptSection13 -State $State } }   # revert known-harmful tweaks
+        )
+        foreach ($sr in $sectionRuns) {
+            & $sr.Run
+            Write-OptSectionSummary -State $State -Section $sr.N
+        }
 
         Invoke-OptManualChecklists -State $State
 
@@ -266,6 +275,8 @@ $OptParameters = @{
 if ($ProfileFrom) { $OptParameters['DryRun'] = $true }
 
 $script:Opt = New-OptState -Tier $Tier -Parameters $OptParameters
+# Real runs echo decisions to the console; the test suite leaves this off.
+$script:Opt['ConsoleDecisions'] = $true
 [void](Initialize-OptPaths -State $script:Opt -ManifestPath $ManifestPath)
 
 Invoke-OptMain -State $script:Opt
