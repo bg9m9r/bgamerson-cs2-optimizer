@@ -1,4 +1,4 @@
-# BGamerson's CS2 Optimizer Script
+# bgamerson-cs2-optimizer
 
 A one-shot, idempotent, **detection-driven** Windows 11 optimizer for competitive CS2 on FACEIT.
 
@@ -34,7 +34,7 @@ It is also honest about what it can't do. Sections that aren't safely scriptable
 
 ### Option 1 — Releases page (easiest)
 
-Open **[Releases](https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/latest)**, download `cs2-opt-<version>.zip`, extract it, then **right-click `Run-Optimize-CS2.cmd` → Run as administrator**.
+Open **[Releases](https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/latest)**, download `bgamerson-cs2-optimizer-<version>.zip`, extract it, then **right-click `Run-Optimize-CS2.cmd` → Run as administrator**.
 
 > **If nothing seems to happen**, Windows has flagged the extracted files as internet-sourced. Unblock them once:
 > ```powershell
@@ -44,10 +44,10 @@ Open **[Releases](https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/lat
 
 ### Option 2 — one command
 
-Paste into **PowerShell** to fetch it into `Downloads\cs2-opt`:
+Paste into **PowerShell** to fetch it into `Downloads\bgamerson-cs2-optimizer`:
 
 ```powershell
-$dir = "$env:USERPROFILE\Downloads\cs2-opt"
+$dir = "$env:USERPROFILE\Downloads\bgamerson-cs2-optimizer"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $base = 'https://raw.githubusercontent.com/bg9m9r/bgamerson-cs2-optimizer/main/dist'
 Invoke-WebRequest "$base/Optimize-CS2.ps1"     -OutFile "$dir\Optimize-CS2.ps1"

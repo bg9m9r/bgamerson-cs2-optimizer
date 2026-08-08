@@ -49,7 +49,7 @@ jobs:
         run: |
           $tag = '${{ github.event.inputs.tag }}'
           if (-not $tag) { $tag = $env:GITHUB_REF -replace '^refs/tags/', '' }
-          $zip = "cs2-opt-$tag.zip"
+          $zip = "bgamerson-cs2-optimizer-$tag.zip"
 
           $staging = Join-Path $env:RUNNER_TEMP 'pkg'
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
