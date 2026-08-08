@@ -1,0 +1,20 @@
+# Normalize on checkin, and force CRLF in the working tree for everything
+# Windows executes. A .cmd file with LF endings breaks cmd.exe parsing outright,
+# and Windows PowerShell 5.1 is happiest with CRLF.
+* text=auto
+
+*.ps1   text eol=crlf
+*.psd1  text eol=crlf
+*.psm1  text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+*.md    text eol=lf
+*.json  text eol=lf
+
+# Built artifact - mark generated so GitHub collapses it in diffs and excludes
+# it from language stats.
+dist/Optimize-CS2.ps1 linguist-generated=true
+
+*.png binary
+*.reg binary

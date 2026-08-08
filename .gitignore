@@ -1,0 +1,17 @@
+# Repo-local Pester, fetched by the bootstrap in the README. Not vendored.
+tools/Modules/
+
+# Test output
+tests/TestResults.xml
+*.log
+
+# Runtime artifacts live in %ProgramData%\cs2-opt, never in the repo.
+# Listed defensively in case anyone runs with a redirected root.
+manifest.json
+changes.jsonl
+report-*.md
+
+# NOTE: dist/ is deliberately NOT ignored. The single built script is the
+# deliverable - the whole point is one file plus one .cmd you can carry to a
+# fresh machine. tests/Dist.Tests.ps1 fails if it drifts out of sync with src/,
+# so a stale build cannot ship silently.

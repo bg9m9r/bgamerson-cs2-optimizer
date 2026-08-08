@@ -1,0 +1,849 @@
+﻿{
+    "SchemaVersion":  1,
+    "CapturedUtc":  "2026-08-08T02:47:48.0515399Z",
+    "DetectionErrors":  [
+
+                        ],
+    "DetectionTimings":  {
+                             "OS":  293,
+                             "CPU":  1188,
+                             "Memory":  251,
+                             "Storage":  641,
+                             "GPU":  32,
+                             "Display":  37,
+                             "Network":  886,
+                             "Audio":  12,
+                             "Input":  32,
+                             "Power":  57,
+                             "Security":  830,
+                             "Games":  32,
+                             "Boot":  1760,
+                             "Virtualization":  967
+                         },
+    "OS":  {
+               "Caption":  "Microsoft Windows 11 Pro",
+               "BuildNumber":  26200,
+               "DisplayVersion":  "25H2",
+               "UBR":  8973,
+               "IsWin11":  true,
+               "Is22H2OrLater":  true,
+               "Edition":  "Pro",
+               "IsCopilotPlusPc":  false,
+               "HasNpu":  false,
+               "IsDomainJoined":  false,
+               "IsAzureAdJoined":  false,
+               "IsMdmEnrolled":  false,
+               "IsManaged":  false,
+               "HasGroupPolicy":  true
+           },
+    "CPU":  {
+                "Vendor":  "AMD",
+                "Name":  "AMD Ryzen 7 9850X3D 8-Core Processor",
+                "Family":  107,
+                "Model":  68,
+                "Stepping":  0,
+                "PhysicalCores":  8,
+                "LogicalCores":  8,
+                "SmtEnabled":  false,
+                "Microarch":  "Zen5-X3D",
+                "HasVCache":  true,
+                "L3TotalMB":  96,
+                "CcdCount":  1,
+                "HasHybridTopology":  false,
+                "PpmDriver":  "amdppm",
+                "TopologySource":  "GetLogicalProcessorInformationEx"
+            },
+    "Memory":  {
+                   "TotalMB":  32768,
+                   "UsableMB":  32404,
+                   "SpeedMTs":  6000,
+                   "ChannelCount":  null,
+                   "ModuleCount":  2,
+                   "CommittedBytes":  19189243904,
+                   "AvailableMB":  19246,
+                   "CommitPercentOfRam":  55.8,
+                   "DdrGeneration":  "DDR5",
+                   "LooksLikeJedecBase":  false,
+                   "MMAgent":  {
+                                   "MemoryCompression":  false,
+                                   "PageCombining":  false,
+                                   "ApplicationLaunchPrefetching":  true,
+                                   "ApplicationPreLaunch":  true,
+                                   "OperationAPI":  true,
+                                   "MaxOperationAPIFiles":  512,
+                                   "Available":  true
+                               }
+               },
+    "Storage":  {
+                    "Volumes":  [
+                                    {
+                                        "DriveLetter":  "C",
+                                        "DiskNumber":  0,
+                                        "BusType":  "NVMe",
+                                        "MediaType":  "SSD",
+                                        "FileSystem":  "NTFS",
+                                        "Label":  "",
+                                        "SizeGB":  931,
+                                        "FreeGB":  611,
+                                        "IsBoot":  true
+                                    }
+                                ],
+                    "Disks":  [
+                                  {
+                                      "DeviceId":  "0",
+                                      "FriendlyName":  "Samsung SSD 9100 PRO 1TB",
+                                      "BusType":  "NVMe",
+                                      "MediaType":  "SSD",
+                                      "SizeGB":  932,
+                                      "SerialNumber":  "FIXTURE-SERIAL-REDACTED"
+                                  },
+                                  {
+                                      "DeviceId":  "1",
+                                      "FriendlyName":  "Samsung SSD 980 PRO 2TB",
+                                      "BusType":  "NVMe",
+                                      "MediaType":  "SSD",
+                                      "SizeGB":  1863,
+                                      "SerialNumber":  "FIXTURE-SERIAL-REDACTED"
+                                  }
+                              ],
+                    "BootBusType":  "NVMe",
+                    "BootMediaType":  "SSD",
+                    "BootFreeGB":  611,
+                    "TrimEnabled":  true,
+                    "HasHdd":  false,
+                    "HasNonBootFixedVolume":  false,
+                    "NonBootFixedVolumes":  [
+
+                                            ]
+                },
+    "GPU":  {
+                "Adapters":  [
+                                 {
+                                     "Vendor":  "AMD",
+                                     "Name":  "AMD Radeon RX 7900 XT",
+                                     "DriverVersion":  "32.0.31035.1003",
+                                     "DriverDate":  "2026-07-23",
+                                     "PnpDeviceId":  "PCI\\VEN_1002\u0026DEV_744C\u0026SUBSYS_471E1DA2\u0026REV_CC\\6\u0026189A910D\u00260\u002600000009",
+                                     "DeviceId":  "744C",
+                                     "VramMB":  20464,
+                                     "IsIntegrated":  false,
+                                     "DrivesPrimary":  true,
+                                     "IsPrimary":  true
+                                 }
+                             ],
+                "PrimaryVendor":  "AMD",
+                "Count":  1,
+                "HasMultiple":  false
+            },
+    "Display":  {
+                    "Displays":  [
+                                     {
+                                         "Device":  "\\\\.\\DISPLAY1",
+                                         "MonitorName":  "ROG SWIFT PG27AQWP",
+                                         "AdapterName":  "AMD Radeon RX 7900 XT",
+                                         "AdapterDeviceId":  "PCI\\VEN_1002\u0026DEV_744C\u0026SUBSYS_471E1DA2\u0026REV_CC",
+                                         "IsPrimary":  true,
+                                         "Width":  2560,
+                                         "Height":  1440,
+                                         "Bpp":  32,
+                                         "CurrentRefreshHz":  540,
+                                         "MaxRefreshHz":  540,
+                                         "RefreshBelowMax":  false
+                                     }
+                                 ],
+                    "PrimaryDevice":  "\\\\.\\DISPLAY1",
+                    "PrimaryRefreshHz":  540,
+                    "PrimaryMaxRefreshHz":  540,
+                    "RefreshBelowMax":  false,
+                    "PrimaryOnIntegrated":  false
+                },
+    "Network":  {
+                    "Adapters":  [
+                                     {
+                                         "Name":  "Ethernet",
+                                         "IfIndex":  7,
+                                         "Description":  "Realtek Gaming 2.5GbE Family Controller",
+                                         "MacAddress":  "00-00-5E-00-53-00",
+                                         "LinkSpeed":  "1 Gbps",
+                                         "Status":  "Up",
+                                         "IsActive":  true,
+                                         "IsWireless":  false,
+                                         "IsVirtual":  false,
+                                         "IsDefaultRoute":  true,
+                                         "RouteMetric":  0,
+                                         "DriverProvider":  "Realtek",
+                                         "DriverVersion":  "1125.28.20.1224",
+                                         "SupportedKeywords":  [
+                                                                   "*EEE",
+                                                                   "*FlowControl",
+                                                                   "*InterruptModeration",
+                                                                   "*IPChecksumOffloadIPv4",
+                                                                   "*JumboPacket",
+                                                                   "*LsoV2IPv4",
+                                                                   "*LsoV2IPv6",
+                                                                   "*PMARPOffload",
+                                                                   "*PMNSOffload",
+                                                                   "*PriorityVlanTag",
+                                                                   "*ReceiveBuffers",
+                                                                   "*SpeedDuplex",
+                                                                   "*TCPChecksumOffloadIPv4",
+                                                                   "*TCPChecksumOffloadIPv6",
+                                                                   "*TransmitBuffers",
+                                                                   "*UDPChecksumOffloadIPv4",
+                                                                   "*UDPChecksumOffloadIPv6",
+                                                                   "*WakeOnMagicPacket",
+                                                                   "*WakeOnPattern",
+                                                                   "AdvancedEEE",
+                                                                   "EEEMaxSupportSpeed",
+                                                                   "EnableGreenEthernet",
+                                                                   "GigaLite",
+                                                                   "NetworkAddress",
+                                                                   "PowerSavingMode",
+                                                                   "RegVlanid",
+                                                                   "S5WakeOnLan",
+                                                                   "WolShutdownLinkSpeed"
+                                                               ],
+                                         "AdvancedProperties":  [
+                                                                    {
+                                                                        "RegistryKeyword":  "*EEE",
+                                                                        "DisplayName":  "Energy-Efficient Ethernet",
+                                                                        "DisplayValue":  "Disabled",
+                                                                        "RegistryValue":  "0",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*FlowControl",
+                                                                        "DisplayName":  "Flow Control",
+                                                                        "DisplayValue":  "Rx \u0026 Tx Enabled",
+                                                                        "RegistryValue":  "3",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Rx \u0026 Tx Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "3"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*InterruptModeration",
+                                                                        "DisplayName":  "Interrupt Moderation",
+                                                                        "DisplayValue":  "Disabled",
+                                                                        "RegistryValue":  "0",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*IPChecksumOffloadIPv4",
+                                                                        "DisplayName":  "IPv4 Checksum Offload",
+                                                                        "DisplayValue":  "Rx \u0026 Tx Enabled",
+                                                                        "RegistryValue":  "3",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Tx Enabled",
+                                                                                                   "Rx Enabled",
+                                                                                                   "Rx \u0026 Tx Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1",
+                                                                                                    "2",
+                                                                                                    "3"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*JumboPacket",
+                                                                        "DisplayName":  "Jumbo Frame",
+                                                                        "DisplayValue":  "Disabled",
+                                                                        "RegistryValue":  "1514",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "4088 Bytes",
+                                                                                                   "9014 Bytes",
+                                                                                                   "16128 Bytes"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "1514",
+                                                                                                    "4088",
+                                                                                                    "9014",
+                                                                                                    "16128"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*LsoV2IPv4",
+                                                                        "DisplayName":  "Large Send Offload v2 (IPv4)",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*LsoV2IPv6",
+                                                                        "DisplayName":  "Large Send Offload v2 (IPv6)",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*PMARPOffload",
+                                                                        "DisplayName":  "ARP Offload",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*PMNSOffload",
+                                                                        "DisplayName":  "NS Offload",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*PriorityVlanTag",
+                                                                        "DisplayName":  "Priority \u0026 VLAN",
+                                                                        "DisplayValue":  "Priority \u0026 VLAN Enabled",
+                                                                        "RegistryValue":  "3",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Priority \u0026 VLAN Disabled",
+                                                                                                   "Priority Enabled",
+                                                                                                   "VLAN Enabled",
+                                                                                                   "Priority \u0026 VLAN Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1",
+                                                                                                    "2",
+                                                                                                    "3"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*ReceiveBuffers",
+                                                                        "DisplayName":  "Receive Buffers",
+                                                                        "DisplayValue":  "1024",
+                                                                        "RegistryValue":  "1024",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   null
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    null
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*SpeedDuplex",
+                                                                        "DisplayName":  "Speed \u0026 Duplex",
+                                                                        "DisplayValue":  "Auto Negotiation",
+                                                                        "RegistryValue":  "0",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Auto Negotiation",
+                                                                                                   "10 Mbps Half Duplex",
+                                                                                                   "10 Mbps Full Duplex",
+                                                                                                   "100 Mbps Half Duplex",
+                                                                                                   "100 Mbps Full Duplex",
+                                                                                                   "1.0 Gbps Full Duplex",
+                                                                                                   "2.5 Gbps Full Duplex"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1",
+                                                                                                    "2",
+                                                                                                    "3",
+                                                                                                    "4",
+                                                                                                    "6",
+                                                                                                    "2500"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*TCPChecksumOffloadIPv4",
+                                                                        "DisplayName":  "TCP Checksum Offload (IPv4)",
+                                                                        "DisplayValue":  "Rx \u0026 Tx Enabled",
+                                                                        "RegistryValue":  "3",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Tx Enabled",
+                                                                                                   "Rx Enabled",
+                                                                                                   "Rx \u0026 Tx Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1",
+                                                                                                    "2",
+                                                                                                    "3"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*TCPChecksumOffloadIPv6",
+                                                                        "DisplayName":  "TCP Checksum Offload (IPv6)",
+                                                                        "DisplayValue":  "Rx \u0026 Tx Enabled",
+                                                                        "RegistryValue":  "3",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Tx Enabled",
+                                                                                                   "Rx Enabled",
+                                                                                                   "Rx \u0026 Tx Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1",
+                                                                                                    "2",
+                                                                                                    "3"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*TransmitBuffers",
+                                                                        "DisplayName":  "Transmit Buffers",
+                                                                        "DisplayValue":  "512",
+                                                                        "RegistryValue":  "512",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   null
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    null
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*UDPChecksumOffloadIPv4",
+                                                                        "DisplayName":  "UDP Checksum Offload (IPv4)",
+                                                                        "DisplayValue":  "Rx \u0026 Tx Enabled",
+                                                                        "RegistryValue":  "3",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Tx Enabled",
+                                                                                                   "Rx Enabled",
+                                                                                                   "Rx \u0026 Tx Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1",
+                                                                                                    "2",
+                                                                                                    "3"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*UDPChecksumOffloadIPv6",
+                                                                        "DisplayName":  "UDP Checksum Offload (IPv6)",
+                                                                        "DisplayValue":  "Rx \u0026 Tx Enabled",
+                                                                        "RegistryValue":  "3",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Tx Enabled",
+                                                                                                   "Rx Enabled",
+                                                                                                   "Rx \u0026 Tx Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1",
+                                                                                                    "2",
+                                                                                                    "3"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*WakeOnMagicPacket",
+                                                                        "DisplayName":  "Wake on Magic Packet",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "*WakeOnPattern",
+                                                                        "DisplayName":  "Wake on pattern match",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "AdvancedEEE",
+                                                                        "DisplayName":  "Advanced EEE",
+                                                                        "DisplayValue":  "Disabled",
+                                                                        "RegistryValue":  "0",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "EEEMaxSupportSpeed",
+                                                                        "DisplayName":  "EEE Max Support Speed",
+                                                                        "DisplayValue":  "1.0 Gbps Full Duplex",
+                                                                        "RegistryValue":  "1000",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "10 Mbps Full Duplex",
+                                                                                                   "100 Mbps Full Duplex",
+                                                                                                   "1.0 Gbps Full Duplex",
+                                                                                                   "2.5 Gbps Full Duplex"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "10",
+                                                                                                    "100",
+                                                                                                    "1000",
+                                                                                                    "2500"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "EnableGreenEthernet",
+                                                                        "DisplayName":  "Green Ethernet",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "GigaLite",
+                                                                        "DisplayName":  "Gigabit Lite",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "NetworkAddress",
+                                                                        "DisplayName":  "Network Address",
+                                                                        "DisplayValue":  null,
+                                                                        "RegistryValue":  null,
+                                                                        "ValidDisplayValues":  [
+                                                                                                   null
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    null
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "PowerSavingMode",
+                                                                        "DisplayName":  "Power Saving Mode",
+                                                                        "DisplayValue":  "Disabled",
+                                                                        "RegistryValue":  "0",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "RegVlanid",
+                                                                        "DisplayName":  "VLAN ID",
+                                                                        "DisplayValue":  "0",
+                                                                        "RegistryValue":  "0",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   null
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    null
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "S5WakeOnLan",
+                                                                        "DisplayName":  "Shutdown Wake-On-Lan",
+                                                                        "DisplayValue":  "Enabled",
+                                                                        "RegistryValue":  "1",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "Disabled",
+                                                                                                   "Enabled"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1"
+                                                                                                ]
+                                                                    },
+                                                                    {
+                                                                        "RegistryKeyword":  "WolShutdownLinkSpeed",
+                                                                        "DisplayName":  "WOL \u0026 Shutdown Link Speed",
+                                                                        "DisplayValue":  "10 Mbps First",
+                                                                        "RegistryValue":  "0",
+                                                                        "ValidDisplayValues":  [
+                                                                                                   "10 Mbps First",
+                                                                                                   "100 Mbps First",
+                                                                                                   "Not Speed Down"
+                                                                                               ],
+                                                                        "ValidRegistryValues":  [
+                                                                                                    "0",
+                                                                                                    "1",
+                                                                                                    "2"
+                                                                                                ]
+                                                                    }
+                                                                ]
+                                     }
+                                 ],
+                    "ActiveAdapterName":  "Ethernet",
+                    "ActiveIfIndex":  7,
+                    "ActiveIsWireless":  false,
+                    "ActiveDriverProvider":  "Realtek",
+                    "ActiveLinkSpeed":  "1 Gbps",
+                    "MultipleDefaultRoutes":  false,
+                    "VirtualAheadOfPhysical":  false
+                },
+    "Audio":  {
+                  "Endpoints":  [
+                                    {
+                                        "Id":  "{00000000-0000-0000-0000-000000000000}",
+                                        "Name":  "Speakers (TOPPING USB DAC)",
+                                        "Enumerator":  "TUSBAUDIO_ENUM",
+                                        "IsUsb":  true,
+                                        "IsHdmi":  false,
+                                        "IsDefault":  true
+                                    }
+                                ],
+                  "DefaultName":  "Speakers (TOPPING USB DAC)",
+                  "DefaultIsHdmi":  false,
+                  "HasUsbDac":  true,
+                  "UsbDacNotDefault":  false
+              },
+    "Input":  {
+                  "VendorUtilities":  [
+                                          {
+                                              "Name":  "Logitech G HUB",
+                                              "Installed":  true,
+                                              "Running":  true
+                                          }
+                                      ],
+                  "HasVendorUtility":  true,
+                  "Mouse":  {
+                                "Speed":  10,
+                                "Threshold2":  0,
+                                "Acceleration":  0,
+                                "Threshold1":  0
+                            }
+              },
+    "Power":  {
+                  "ActiveSchemeGuid":  "682abefa-2beb-44cf-ad85-84c45fd50e03",
+                  "ActiveSchemeName":  "Ultimate Performance",
+                  "Schemes":  [
+                                  {
+                                      "Guid":  "381b4222-f694-41f0-9685-ff5bb260df2e",
+                                      "Name":  "Balanced",
+                                      "IsActive":  false
+                                  },
+                                  {
+                                      "Guid":  "682abefa-2beb-44cf-ad85-84c45fd50e03",
+                                      "Name":  "Ultimate Performance",
+                                      "IsActive":  true
+                                  },
+                                  {
+                                      "Guid":  "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+                                      "Name":  "High performance",
+                                      "IsActive":  false
+                                  },
+                                  {
+                                      "Guid":  "a1841308-3541-4fab-bc81-f71556f20b4a",
+                                      "Name":  "Power saver",
+                                      "IsActive":  false
+                                  }
+                              ],
+                  "IsLaptop":  false,
+                  "HasBattery":  false,
+                  "ChassisTypes":  3,
+                  "OnAcPower":  true,
+                  "AvailableSleepStates":  [
+                                               "Standby (S3)",
+                                               "Hibernate",
+                                               "Fast Startup"
+                                           ],
+                  "SupportsModernStandby":  false,
+                  "UltimatePerformanceGuid":  "682abefa-2beb-44cf-ad85-84c45fd50e03",
+                  "UltimatePerformanceExists":  true
+              },
+    "Security":  {
+                     "SecureBootEnabled":  true,
+                     "SecureBootSupported":  true,
+                     "TpmPresent":  true,
+                     "TpmReady":  true,
+                     "TpmVersion":  "6.33.0.6\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+                     "VbsStatus":  2,
+                     "VbsRunning":  true,
+                     "HvciRunning":  true,
+                     "CredentialGuardRunning":  false,
+                     "SecurityServicesRunning":  [
+                                                     2
+                                                 ],
+                     "AvailableSecurityProperties":  [
+                                                         1,
+                                                         2,
+                                                         3,
+                                                         4,
+                                                         5,
+                                                         6,
+                                                         7
+                                                     ],
+                     "HypervisorLaunchType":  "Auto",
+                     "HypervisorIommuPolicy":  "Enable",
+                     "IommuEnabled":  true,
+                     "IommuEvidence":  [
+                                           "bcdedit hypervisoriommupolicy=Enable",
+                                           "FACEIT_IOMMU driver running",
+                                           "DMA protection listed as available"
+                                       ],
+                     "KernelDmaProtection":  null,
+                     "BitLockerProtected":  [
+
+                                            ],
+                     "BitLockerAnyProtected":  false,
+                     "BitLockerRecoveryKeyEscrowed":  null,
+                     "AntiCheat":  [
+                                       {
+                                           "Name":  "FACEIT AC",
+                                           "ServiceNames":  [
+                                                                "FACEITService"
+                                                            ],
+                                           "ServiceStates":  [
+                                                                 "FACEITService=Stopped/Manual"
+                                                             ],
+                                           "ServicePresent":  true,
+                                           "ServiceEnabled":  true,
+                                           "DriverNames":  [
+                                                               "FACEIT",
+                                                               "FACEIT_IOMMU"
+                                                           ],
+                                           "DriverStates":  [
+                                                                "FACEIT=Running/System",
+                                                                "FACEIT_IOMMU=Running/System"
+                                                            ],
+                                           "DriverPresent":  true,
+                                           "DriverRunning":  true
+                                       },
+                                       {
+                                           "Name":  "EasyAntiCheat",
+                                           "ServiceNames":  [
+                                                                "EasyAntiCheat_EOS"
+                                                            ],
+                                           "ServiceStates":  [
+                                                                 "EasyAntiCheat_EOS=Stopped/Manual"
+                                                             ],
+                                           "ServicePresent":  true,
+                                           "ServiceEnabled":  true,
+                                           "DriverNames":  [
+
+                                                           ],
+                                           "DriverStates":  [
+
+                                                            ],
+                                           "DriverPresent":  false,
+                                           "DriverRunning":  false
+                                       }
+                                   ],
+                     "HasKernelAntiCheat":  true,
+                     "HasFaceitAc":  true
+                 },
+    "Games":  {
+                  "SteamPath":  "C:\\Program Files (x86)\\Steam",
+                  "LibraryPaths":  [
+                                       "C:\\Program Files (x86)\\Steam"
+                                   ],
+                  "Cs2ExePath":  "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive\\game\\bin\\win64\\cs2.exe",
+                  "Cs2Installed":  true,
+                  "Cs2LibraryPath":  "C:\\Program Files (x86)\\Steam",
+                  "Cs2LibraryMediaType":  "SSD"
+              },
+    "Boot":  {
+                 "FirmwareType":  "Uefi",
+                 "BootEntries":  [
+                                     "Windows Boot Manager"
+                                 ],
+                 "NonWindowsPartitions":  [
+                                              {
+                                                  "DiskNumber":  1,
+                                                  "PartitionNumber":  2,
+                                                  "Type":  "Unknown",
+                                                  "SizeGB":  1859
+                                              }
+                                          ],
+                 "DualBootEvidence":  [
+                                          "unrecognised partition(s): disk 1 part 2 Unknown 1859GB"
+                                      ],
+                 "IsDualBoot":  true,
+                 "HibernationEnabled":  false,
+                 "FastStartupEnabled":  true
+             },
+    "Virtualization":  {
+                           "IsVirtualMachine":  false,
+                           "VmEvidence":  null,
+                           "HypervisorPresent":  true,
+                           "HyperVEnabled":  false,
+                           "WslInstalled":  true,
+                           "DockerInstalled":  false,
+                           "SandboxEnabled":  false,
+                           "VmPlatformEnabled":  true,
+                           "BlocksHypervisorOff":  true
+                       },
+    "Fingerprint":  {
+                        "Hash":  "sha256:FIXTURE",
+                        "Components":  {
+                                           "CpuName":  "AMD Ryzen 7 9850X3D 8-Core Processor",
+                                           "GpuIds":  "PCI\\VEN_1002\u0026DEV_744C\u0026SUBSYS_471E1DA2\u0026REV_CC\\6\u0026189A910D\u00260\u002600000009",
+                                           "BootDisk":  "FIXTURE-SERIAL-REDACTED",
+                                           "NicMacs":  "00-00-5E-00-53-00",
+                                           "Baseboard":  "Default string"
+                                       }
+                    }
+}
+
