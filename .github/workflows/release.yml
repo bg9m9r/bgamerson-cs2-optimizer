@@ -1,0 +1,82 @@
+name: Release
+
+# Tag a commit to publish a release:
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.0.0)'
+        required: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap tooling
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force | Out-Null
+          Save-Module -Name Pester -MinimumVersion 5.0.0 -Path .\tools\Modules -Force
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+            Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          }
+
+      # Build and test BEFORE publishing. Shipping a release whose script fails
+      # its own rollback tests would be worse than shipping nothing.
+      - name: Build
+        shell: powershell
+        run: .\build\Build-Script.ps1
+
+      - name: Test
+        shell: powershell
+        run: .\tests\Invoke-Tests.ps1 -NoRelaunch
+
+      # Release notes live in .github/release-notes.md with {{ZIP}} and {{SHA}}
+      # placeholders, rather than a here-string embedded in this YAML - an
+      # unindented here-string line silently terminates a YAML block scalar.
+      - name: Package
+        id: pack
+        shell: powershell
+        run: |
+          $tag = '${{ github.event.inputs.tag }}'
+          if (-not $tag) { $tag = $env:GITHUB_REF -replace '^refs/tags/', '' }
+          $zip = "cs2-opt-$tag.zip"
+
+          $staging = Join-Path $env:RUNNER_TEMP 'pkg'
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item dist\Optimize-CS2.ps1     -Destination $staging
+          Copy-Item dist\Run-Optimize-CS2.cmd -Destination $staging
+          Copy-Item README.md                 -Destination $staging
+          if (Test-Path LICENSE) { Copy-Item LICENSE -Destination $staging }
+          Compress-Archive -Path "$staging\*" -DestinationPath $zip -Force
+
+          $sha = (Get-FileHash dist\Optimize-CS2.ps1 -Algorithm SHA256).Hash
+          $notes = Get-Content .github\release-notes.md -Raw
+          $notes = $notes.Replace('{{ZIP}}', $zip).Replace('{{SHA}}', $sha)
+          $notesFile = Join-Path $env:RUNNER_TEMP 'notes.md'
+          Set-Content -LiteralPath $notesFile -Value $notes -Encoding UTF8
+
+          "tag=$tag"             | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "zip=$zip"             | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "notesFile=$notesFile" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Create release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ steps.pack.outputs.tag }}"
+          "${{ steps.pack.outputs.zip }}"
+          "dist/Optimize-CS2.ps1"
+          "dist/Run-Optimize-CS2.cmd"
+          --title "${{ steps.pack.outputs.tag }}"
+          --notes-file "${{ steps.pack.outputs.notesFile }}"

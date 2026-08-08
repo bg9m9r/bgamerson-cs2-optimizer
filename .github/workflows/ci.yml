@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 'shell: powershell' is Windows PowerShell 5.1 on GitHub runners, which
+      # is the script's actual runtime target. Deliberately not pwsh: PS7 hides
+      # real behavioural differences (ConvertTo-Json depth, no -AsHashtable,
+      # native-command error semantics) that would let bugs through.
+      - name: Bootstrap tooling
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force | Out-Null
+          Save-Module -Name Pester -MinimumVersion 5.0.0 -Path .\tools\Modules -Force
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+            Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          }
+
+      # Fails on: parse errors, top-level statements outside header/main,
+      # automatic-variable assignment, ConvertTo-Json without -Depth, native
+      # tools outside the chokepoint, and non-ASCII source.
+      - name: Build (AST gates + PSScriptAnalyzer)
+        shell: powershell
+        run: .\build\Build-Script.ps1
+
+      # Includes Dist.Tests.ps1, which fails if the committed dist\ has drifted
+      # out of sync with src\ - the guard that makes shipping a built artifact
+      # in the repo safe.
+      - name: Test
+        shell: powershell
+        run: .\tests\Invoke-Tests.ps1 -NoRelaunch
+
+      - name: Upload built script
+        uses: actions/upload-artifact@v4
+        with:
+          name: Optimize-CS2
+          path: |
+            dist/Optimize-CS2.ps1
+            dist/Run-Optimize-CS2.cmd
+          if-no-files-found: error

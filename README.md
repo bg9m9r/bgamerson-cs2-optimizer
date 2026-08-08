@@ -28,34 +28,69 @@ It is also honest about what it can't do. Sections that aren't safely scriptable
 
 ---
 
-## Quick start
+## Download
 
-Requires **Windows PowerShell 5.1** (not PowerShell 7 — see [below](#why-windows-powershell-51)) and an elevated prompt.
+**You do not need to build anything.** It ships pre-built as a single file.
+
+### Option 1 — Releases page (easiest)
+
+Open **[Releases](https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/latest)**, download `cs2-opt-<version>.zip`, extract it, then **right-click `Run-Optimize-CS2.cmd` → Run as administrator**.
+
+> **If nothing seems to happen**, Windows has flagged the extracted files as internet-sourced. Unblock them once:
+> ```powershell
+> Get-ChildItem "C:\path\to\extracted\folder" | Unblock-File
+> ```
+> That is Mark of the Web, which blocks unsigned downloaded scripts under the default execution policy.
+
+### Option 2 — one command
+
+Paste into **PowerShell** to fetch it into `Downloads\cs2-opt`:
 
 ```powershell
-# See exactly what it would do. Changes nothing.
-.\dist\Run-Optimize-CS2.cmd -DryRun
+$dir = "$env:USERPROFILE\Downloads\cs2-opt"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$base = 'https://raw.githubusercontent.com/bg9m9r/bgamerson-cs2-optimizer/main/dist'
+Invoke-WebRequest "$base/Optimize-CS2.ps1"     -OutFile "$dir\Optimize-CS2.ps1"
+Invoke-WebRequest "$base/Run-Optimize-CS2.cmd" -OutFile "$dir\Run-Optimize-CS2.cmd"
+Get-ChildItem $dir | Unblock-File
+explorer $dir
 ```
 
-Read the report it prints, then:
+Then right-click `Run-Optimize-CS2.cmd` → **Run as administrator**.
 
-```powershell
-.\dist\Run-Optimize-CS2.cmd -Tier Safe
+*Deliberately not offered as an `irm … | iex` one-liner.* Piping a remote script straight into your shell is a bad habit in general, and it does not work here anyway — the script relies on `#Requires -RunAsAdministrator`, a `param()` block and command-line switches, none of which survive that pattern. Download it, read it, then run it.
+
+---
+
+## Quick start
+
+Requires **Windows PowerShell 5.1** (not PowerShell 7 — see [below](#why-windows-powershell-51)) and an **elevated** prompt.
+
+Always start here. It changes nothing and prints exactly what it would do:
+
+```
+Run-Optimize-CS2.cmd -DryRun
+```
+
+Read the report, then apply the lowest tier:
+
+```
+Run-Optimize-CS2.cmd -Tier Safe
 ```
 
 Reboot, then resolve the checks that only settle after a restart:
 
-```powershell
-.\dist\Run-Optimize-CS2.cmd -VerifyOnly
+```
+Run-Optimize-CS2.cmd -VerifyOnly
 ```
 
 To undo everything a run did:
 
-```powershell
-.\dist\Run-Optimize-CS2.cmd -Rollback
+```
+Run-Optimize-CS2.cmd -Rollback
 ```
 
-The `.cmd` launcher just invokes the script with `-NoProfile -ExecutionPolicy Bypass`. You can call `dist\Optimize-CS2.ps1` directly if your execution policy allows it.
+The `.cmd` launcher just invokes the script with `-NoProfile -ExecutionPolicy Bypass`, which also sidesteps the Mark-of-the-Web problem above. You can call `Optimize-CS2.ps1` directly if you prefer and your execution policy allows it.
 
 ---
 
