@@ -1,4 +1,4 @@
-# cs2-opt
+# BGamerson's CS2 Optimizer Script
 
 A one-shot, idempotent, **detection-driven** Windows 11 optimizer for competitive CS2 on FACEIT.
 
