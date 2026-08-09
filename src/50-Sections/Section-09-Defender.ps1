@@ -43,15 +43,25 @@ function Invoke-OptSection09 {
     $existingPaths     = @($current.ExclusionPath)
     $existingProcesses = @($current.ExclusionProcess)
 
+    # Path exclusions carry their own subsection id, 9.1, because the CS2-absent
+    # gate (G-CS2-ABSENT) blocks exactly '9.1' per spec 1.5.4 ("skip ... 9 path
+    # exclusions") while leaving the Steam process exclusions below alone.
+    # Before this existed the gate's '9.1' was a dead id that blocked nothing.
     $paths = New-Object System.Collections.ArrayList
-    foreach ($lib in @($p.Games.LibraryPaths)) { if ($lib) { [void]$paths.Add([string]$lib) } }
+    if (Test-OptSectionEnabled -State $State -Section '9.1') {
+        foreach ($lib in @($p.Games.LibraryPaths)) { if ($lib) { [void]$paths.Add([string]$lib) } }
 
-    # Vendor shader cache. Only the detected vendor's path is added - adding an
-    # NVIDIA cache path on an AMD machine would be a meaningless exclusion.
-    switch ($p.GPU.PrimaryVendor) {
-        'AMD'    { [void]$paths.Add("$env:LOCALAPPDATA\AMD") }
-        'NVIDIA' { [void]$paths.Add("$env:LOCALAPPDATA\NVIDIA"); [void]$paths.Add("$env:LOCALAPPDATA\NVIDIA Corporation") }
-        'Intel'  { [void]$paths.Add("$env:LOCALAPPDATA\Intel") }
+        # Vendor shader cache. Only the detected vendor's path is added - adding
+        # an NVIDIA cache path on an AMD machine would be a meaningless exclusion.
+        switch ($p.GPU.PrimaryVendor) {
+            'AMD'    { [void]$paths.Add("$env:LOCALAPPDATA\AMD") }
+            'NVIDIA' { [void]$paths.Add("$env:LOCALAPPDATA\NVIDIA"); [void]$paths.Add("$env:LOCALAPPDATA\NVIDIA Corporation") }
+            'Intel'  { [void]$paths.Add("$env:LOCALAPPDATA\Intel") }
+        }
+    }
+    else {
+        [void](Add-OptDecision -State $State -Id 'S-9.1-GATED' -Section '9.1' -Decision 'Off' `
+            -Title 'Defender path exclusions' -Reason 'gated off (CS2 not installed - nothing to protect from scan stutter)')
     }
 
     foreach ($path in $paths) {

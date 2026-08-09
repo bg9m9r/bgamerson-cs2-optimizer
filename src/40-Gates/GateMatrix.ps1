@@ -49,7 +49,11 @@ function Get-OptGateMatrix {
             Id = 'G-LAPTOP'; Section = '2'; Title = 'Laptop / battery present'
             When = { param($p, $o) ConvertTo-OptBool $p.Power.IsLaptop }
             OnIndeterminate = 'Allow'
-            Kind = 'ForceTier'; Effect = @{ Tier = 'Safe'; Skip = @('2.1', '2.2') }
+            # Skips 2.1 only, not all of 2.2: the spec's laptop row exempts USB
+            # selective suspend ("the whole of 2.2 EXCEPT USB selective
+            # suspend"), so the per-setting laptop handling lives inside
+            # Section-02 where it can keep that one setting and drop the rest.
+            Kind = 'ForceTier'; Effect = @{ Tier = 'Safe'; Skip = @('2.1') }
             Severity = 'Warning'
             Reason = 'laptop detected - Ultimate Performance and core-parking changes are a thermal-throttling trap'
         }
@@ -104,6 +108,20 @@ function Get-OptGateMatrix {
             OnIndeterminate = 'Allow'
             Kind = 'Finding'; Severity = 'Warning'
             Reason = 'AMD CPU without the amdppm power driver loaded - Windows will misapply the power model regardless of what this script sets. Install the AMD chipset driver package.'
+        }
+        @{
+            # Intel counterpart to G-AMD-PPM (spec 1.5.4 and 2.2 both call for
+            # it): on a hybrid part without intelppm loaded, Thread Director is
+            # not in charge of placement, and every hybrid-related gate premise
+            # here rests on it being so.
+            Id = 'G-INTEL-PPM'; Section = '2.2'; Title = 'Intel power model driver'
+            When = { param($p, $o)
+                if ($p.CPU.Vendor -ne 'Intel') { return $false }
+                return ($p.CPU.PpmDriver -ne 'intelppm')
+            }
+            OnIndeterminate = 'Allow'
+            Kind = 'Finding'; Severity = 'Warning'
+            Reason = 'Intel CPU without the intelppm power driver loaded - Thread Director scheduling depends on it. Fix chipset drivers / Windows Update before trusting any scheduling tweak here.'
         }
 
         # ----------------------------------------------------------------- GPU
@@ -368,12 +386,18 @@ function Get-OptGateMatrix {
                 $bl = ConvertTo-OptBool $p.Security.BitLockerAnyProtected
                 if ($null -eq $bl) { return $null }
                 if (-not $bl) { return $false }
-                return (-not [bool]$o.BitLockerAcknowledged)
+                # Spec 1.5.4 requires BOTH conditions to unlock bcdedit:
+                # -BitLockerAcknowledged AND a recovery protector confirmed
+                # present. Acknowledgement without a recovery key is exactly the
+                # brick scenario spec 0 warns about - the PCR mismatch fires on
+                # reboot and there is no key to type in.
+                if (-not [bool]$o.BitLockerAcknowledged) { return $true }
+                return ((ConvertTo-OptBool $p.Security.BitLockerRecoveryKeyEscrowed) -ne $true)
             }
             OnIndeterminate = 'Block'
             Kind = 'Capability'; Effect = @{ Capability = @{ BcdEdit = $false } }
             Severity = 'Warning'
-            Reason = 'BitLocker protection is on. Boot-configuration changes alter TPM PCR measurements and drop the machine into a recovery-key prompt. Skipping is deliberate and safer than suspending - Suspend-BitLocker -RebootCount 1 does not survive a delayed reboot.'
+            Reason = 'BitLocker protection is on and either -BitLockerAcknowledged was not passed or no recovery-password protector could be confirmed. Boot-configuration changes alter TPM PCR measurements and drop the machine into a recovery-key prompt - without a confirmed key that is a lockout, not an inconvenience. Skipping is deliberate and safer than suspending.'
         }
 
         # ------------------------------------------------------ virtualization

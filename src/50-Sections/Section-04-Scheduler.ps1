@@ -20,10 +20,14 @@ function Invoke-OptSection41Mmcss {
     $profileKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
     $gamesKey   = "$profileKey\Tasks\Games"
 
-    # SystemResponsiveness is clamped internally; 10 is the meaningful floor,
-    # not 0. NetworkThrottlingIndex is the half of this block with a real,
-    # measurable effect on a high-packet-rate title - and unlike section 7.3 it
-    # applies to UDP, which is what CS2 actually uses.
+    # SystemResponsiveness: per current Microsoft docs, values below 10 (and
+    # above 100) are clamped to 20 and non-multiples of 10 round down - so the
+    # popular "set it to 0" advice actually lands you at 20, strictly WORSE
+    # than the 10 written here. 10 is the true floor.
+    #
+    # NetworkThrottlingIndex is the half of this block with a real effect on a
+    # high-packet-rate title - and unlike section 7.3 it applies to UDP, which
+    # is what CS2 actually uses.
     Set-OptRegistryValue -State $State -Path $profileKey -Name 'SystemResponsiveness' `
         -Type DWord -Value 10 -Section '4.1' -Tier 'Aggressive' `
         -Title 'MMCSS SystemResponsiveness' | Out-Null
@@ -40,6 +44,14 @@ function Invoke-OptSection41Mmcss {
         -Type String -Value 'High' -Section '4.1' -Tier 'Aggressive' -Title 'MMCSS Games Scheduling Category' | Out-Null
     Set-OptRegistryValue -State $State -Path $gamesKey -Name 'SFIO Priority' `
         -Type String -Value 'High' -Section '4.1' -Tier 'Aggressive' -Title 'MMCSS Games SFIO Priority' | Out-Null
+
+    # Honesty, sourced from the same Microsoft page: 'GPU Priority' is
+    # documented as "not yet used" and 'SFIO Priority' as "not used". They are
+    # written because the spec's table includes them and they are harmless, but
+    # the report must not imply they do anything.
+    [void](Add-OptDecision -State $State -Id 'S-4.1-UNUSED' -Section '4.1' -Decision 'NoOp' `
+        -Title 'MMCSS Games GPU Priority / SFIO Priority expectations' `
+        -Reason 'Microsoft documents both fields as currently unused by the scheduler - written for spec compliance, expect no effect from these two. Priority and Scheduling Category are the consumed fields.')
 }
 
 function Invoke-OptSection42Priority {

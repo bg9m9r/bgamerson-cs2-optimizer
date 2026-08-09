@@ -201,6 +201,15 @@ function Invoke-OptSection83VisualFx {
     [void](Add-OptDecision -State $State -Id 'S-8.3-FONTS' -Section '8.3' -Decision 'NoOp' `
         -Title 'Font smoothing' `
         -Reason 'left ON deliberately - "adjust for best performance" would disable ClearType, which costs readability for no in-game gain')
+
+    # UserPreferencesMask (which the spec's 8.3 also names) is deliberately NOT
+    # written. It is a packed multi-bit field where cursor shadow, menu
+    # animation, smooth scrolling AND several accessibility behaviours all
+    # share bytes - a blind canned value would clobber whatever the user set on
+    # purpose. VisualFXSetting=2 is the supported switch for the same outcome.
+    [void](Add-OptDecision -State $State -Id 'S-8.3-UPM' -Section '8.3' -Decision 'NoOp' `
+        -Title 'UserPreferencesMask' `
+        -Reason 'not written by design - it is a packed bitfield shared with accessibility settings, and a canned value would overwrite user choices. VisualFXSetting covers the same ground safely.')
 }
 
 function Invoke-OptSection84Startup {
@@ -265,22 +274,39 @@ function Invoke-OptSection85Ai {
     $verifiedOnBuild = 26100
     $currentBuild = [int]$p.OS.BuildNumber
 
+    # Paths audited against this build's own ADMX definitions
+    # (C:\Windows\PolicyDefinitions), which is the ground truth the spec's
+    # "validate each key against the detected build" rule (8.5) asks for:
+    #
+    #   - The Paint policies are class=Machine under
+    #     Software\Microsoft\Windows\CurrentVersion\Policies\Paint - NOT the
+    #     spec's SOFTWARE\Policies\...\Paint, which no component reads. The
+    #     spec's path is written nowhere; following it produced three inert
+    #     keys reported as wins.
+    #   - TurnOffWindowsCopilot exists ONLY as a per-user policy under
+    #     WindowsCopilot. The spec's HKLM WindowsAI variant is undocumented on
+    #     this build and has been dropped rather than written-and-counted.
+    #   - Notepad's DisableAIFeatures has no ADMX on this build at all - it is
+    #     still written as future-proofing but flagged Unverified below.
     $keys = @(
-        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI';    N = 'DisableAIDataAnalysis';  T = 'Recall (machine)' }
-        @{ P = 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI';    N = 'DisableAIDataAnalysis';  T = 'Recall (user)' }
-        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI';    N = 'DisableClickToDo';       T = 'Click to Do' }
-        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI';    N = 'TurnOffWindowsCopilot';  T = 'Copilot' }
-        @{ P = 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot'; N = 'TurnOffWindowsCopilot'; T = 'Copilot (legacy path)' }
-        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Paint';        N = 'DisableCocreator';       T = 'Paint Cocreator' }
-        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Paint';        N = 'DisableImageCreator';    T = 'Paint image creator' }
-        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Paint';        N = 'DisableGenerativeFill';  T = 'Paint generative fill' }
-        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Notepad';      N = 'DisableAIFeatures';      T = 'Notepad AI' }
+        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI';      N = 'DisableAIDataAnalysis'; T = 'Recall (machine)' }
+        @{ P = 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI';      N = 'DisableAIDataAnalysis'; T = 'Recall (user)' }
+        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI';      N = 'DisableClickToDo';      T = 'Click to Do' }
+        @{ P = 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot'; N = 'TurnOffWindowsCopilot'; T = 'Copilot' }
+        @{ P = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint'; N = 'DisableCocreator';      T = 'Paint Cocreator' }
+        @{ P = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint'; N = 'DisableImageCreator';   T = 'Paint image creator' }
+        @{ P = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint'; N = 'DisableGenerativeFill'; T = 'Paint generative fill' }
+        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Notepad';        N = 'DisableAIFeatures';     T = 'Notepad AI' }
     )
 
     foreach ($k in $keys) {
         Set-OptRegistryValue -State $State -Path $k.P -Name $k.N -Type DWord -Value 1 `
             -Section '8.5' -Tier 'Aggressive' -Title $k.T | Out-Null
     }
+
+    [void](Add-OptDecision -State $State -Id 'S-8.5-NOTEPAD' -Section '8.5' -Decision 'Unverified' `
+        -Title 'Notepad AI policy' `
+        -Reason 'DisableAIFeatures has no policy definition on this build - written as future-proofing, not counted as an applied optimization')
 
     Set-OptRegistryValue -State $State -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced' `
         -Name 'ShowCopilotButton' -Type DWord -Value 0 -Section '8.5' -Tier 'Aggressive' `
@@ -298,6 +324,35 @@ function Invoke-OptSection85Ai {
         [void](Add-OptDecision -State $State -Id 'S-8.5-NPU' -Section '8.5' -Decision 'NoOp' `
             -Title 'Recall and on-device AI' `
             -Reason 'no NPU on this machine, so Recall and the on-device AI surfaces are NOT INSTALLED. The policy keys above are future-proofing only and are not counted as an applied optimization.')
+    }
+    else {
+        # Copilot+ machine: Recall may exist as an optional feature, and the
+        # spec (8.5) says to disable it outright when present, not just write
+        # the policy key.
+        $recall = $null
+        try { $recall = Get-WindowsOptionalFeature -Online -FeatureName 'Recall' -ErrorAction Stop } catch { }
+
+        if ($recall -and [string]$recall.State -eq 'Enabled') {
+            $r = Invoke-OptCmdletChange -State $State -Description 'disable the Recall optional feature' -Action {
+                Disable-WindowsOptionalFeature -Online -FeatureName 'Recall' -NoRestart -ErrorAction Stop | Out-Null
+            }
+            if ($r.Success -or $r.DryRun) {
+                $change = New-OptChangeRecord -State $State -Type 'WindowsOptionalFeature' -Section '8.5' -Tier 'Aggressive' `
+                    -Path 'OptionalFeatures' -Name 'Recall' -Target @{ FeatureName = 'Recall' } `
+                    -OldValue 'Enabled' -NewValue 'Disabled' -RequiresReboot -VerifyMode 'PostReboot'
+                if ($State.DryRun) { [void]$State.Changes.Add($change) } else { [void](Add-OptChange -State $State -Change $change) }
+                [void](Add-OptDecision -State $State -Id 'S-8.5-RECALL' -Section '8.5' -Decision 'Applied' `
+                    -Title 'Recall optional feature' -Reason 'disabled (was enabled on this Copilot+ machine)')
+            }
+            else {
+                [void](Add-OptDecision -State $State -Id 'S-8.5-RECALL' -Section '8.5' -Decision 'Failed' `
+                    -Title 'Recall optional feature' -Severity 'Warning' -Reason $r.Error)
+            }
+        }
+        elseif ($recall) {
+            [void](Add-OptDecision -State $State -Id 'S-8.5-RECALL' -Section '8.5' -Decision 'NoOp' `
+                -Title 'Recall optional feature' -Reason "present but $([string]$recall.State)")
+        }
     }
 
     if ($currentBuild -gt $verifiedOnBuild) {

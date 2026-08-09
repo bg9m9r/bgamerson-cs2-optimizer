@@ -67,9 +67,10 @@ function ConvertTo-OptStorableValue {
 
         REG_BINARY is the case that forces this. ConvertTo-Json turns a byte[]
         into an array of integers, and ConvertFrom-Json hands back Object[] - so
-        a naive rollback would write garbage or throw. Section 8.3 writes
-        HKCU\Control Panel\Desktop\UserPreferencesMask, which is binary, so this
-        is a live path, not a hypothetical.
+        a naive rollback would write garbage or throw. No section currently
+        WRITES a binary value, but rollback restores the OLD value of whatever a
+        section replaces, and any pre-existing value can be REG_BINARY - so the
+        round-trip has to survive it regardless.
 
         Binary is stored as a tagged base64 envelope that survives the round trip
         unambiguously.

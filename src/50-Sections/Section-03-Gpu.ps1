@@ -12,10 +12,65 @@ function Invoke-OptSection03 {
 
     Write-OptLog -Level Header 'SECTION 3 - GPU'
 
-    Invoke-OptSection31Registry   -State $State
-    Invoke-OptSection32Mpo        -State $State
-    Invoke-OptSection33PerApp     -State $State
-    Invoke-OptSection38Refresh    -State $State
+    Invoke-OptSection31Registry        -State $State
+    Invoke-OptSection32Mpo             -State $State
+    Invoke-OptSection33PerApp          -State $State
+    Invoke-OptSection35NvidiaTelemetry -State $State
+    Invoke-OptSection38Refresh         -State $State
+}
+
+function Invoke-OptSection35NvidiaTelemetry {
+    <#
+        The one NVIDIA-specific item the spec says the script CAN automate
+        safely (3.5): the telemetry container service and its scheduled tasks.
+        Everything else NVIDIA lives in the manual checklist because the driver
+        profile store is a binary blob.
+
+        No-ops entirely on non-NVIDIA machines.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
+
+    if ($State.Profile.GPU.PrimaryVendor -ne 'NVIDIA') { return }
+    if (-not (Test-OptSectionEnabled -State $State -Section '3.5')) { return }
+    if (-not (Test-OptTier -State $State -Required 'Aggressive')) { return }
+
+    $svc = Get-Service -Name 'NvTelemetryContainer' -ErrorAction SilentlyContinue
+    if ($svc) {
+        if ([string]$svc.StartType -eq 'Disabled') {
+            [void](Add-OptDecision -State $State -Id 'S-3.5-TELEMETRY' -Section '3.5' -Decision 'NoOp' `
+                -Title 'NVIDIA telemetry service' -Reason 'already disabled')
+        }
+        else {
+            $old = [string]$svc.StartType
+            $r = Invoke-OptCmdletChange -State $State -Description 'disable NvTelemetryContainer' -Action {
+                Set-Service -Name 'NvTelemetryContainer' -StartupType Disabled -ErrorAction Stop
+                Stop-Service -Name 'NvTelemetryContainer' -Force -ErrorAction SilentlyContinue
+            }
+            if ($r.Success -or $r.DryRun) {
+                $change = New-OptChangeRecord -State $State -Type 'Service' -Section '3.5' -Tier 'Aggressive' `
+                    -Path 'services' -Name 'NvTelemetryContainer' `
+                    -Target @{ ServiceName = 'NvTelemetryContainer' } `
+                    -OldValue $old -NewValue 'Disabled'
+                if ($State.DryRun) { [void]$State.Changes.Add($change) } else { [void](Add-OptChange -State $State -Change $change) }
+                [void](Add-OptDecision -State $State -Id 'S-3.5-TELEMETRY' -Section '3.5' -Decision 'Applied' `
+                    -Title 'NVIDIA telemetry service' -Reason "disabled (was $old)")
+            }
+            else {
+                [void](Add-OptDecision -State $State -Id 'S-3.5-TELEMETRY' -Section '3.5' -Decision 'Failed' `
+                    -Title 'NVIDIA telemetry service' -Severity 'Warning' -Reason $r.Error)
+            }
+        }
+    }
+
+    # The telemetry scheduled tasks live in the task root with GUID-suffixed
+    # names, so enumerate-and-match rather than exact names.
+    $nvTasks = @(Get-ScheduledTask -TaskPath '\' -ErrorAction SilentlyContinue |
+                 Where-Object { $_.TaskName -match '^(NvTmRep|NvTmMon|NvTmRepOnLogon|NvProfileUpdater|NvDriverUpdateCheck)' })
+    foreach ($t in $nvTasks) {
+        Disable-OptScheduledTask -State $State -TaskPath ([string]$t.TaskPath) -TaskName ([string]$t.TaskName) `
+            -Section '3.5' -Tier 'Aggressive'
+    }
 }
 
 function Invoke-OptSection31Registry {
@@ -24,11 +79,26 @@ function Invoke-OptSection31Registry {
 
     # Hardware-accelerated GPU scheduling. Required for AMD Anti-Lag and NVIDIA
     # Reflex low-latency paths to work correctly. Gated off for Intel Arc, where
-    # behaviour is driver-version dependent.
+    # behaviour is driver-version dependent - and skipped entirely when the
+    # driver does not advertise support (spec 3.1: HwSchMode absent from
+    # GraphicsDrivers after a clean driver install means the driver has no HAGS
+    # path, and forcing the value does nothing but clutter the manifest).
     if (Test-OptSectionEnabled -State $State -Section '3.1.HwSchMode') {
-        Set-OptRegistryValue -State $State -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' `
-            -Name 'HwSchMode' -Type DWord -Value 2 -Section '3.1' -Tier 'Safe' `
-            -Title 'Hardware-accelerated GPU scheduling' -RequiresReboot -VerifyMode PostReboot | Out-Null
+        $hagsPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'
+        $hagsResolved = Resolve-OptRegistryPath -State $State -Path $hagsPath
+        $hagsInfo = Get-OptRegistryValueInfo -State $State -Hive $hagsResolved.Hive `
+                        -SubKey $hagsResolved.SubKey -Name 'HwSchMode'
+
+        if (-not $hagsInfo.ValueExists) {
+            [void](Add-OptDecision -State $State -Id 'S-3.1-HAGS-UNSUP' -Section '3.1' -Decision 'Off' `
+                -Title 'Hardware-accelerated GPU scheduling' `
+                -Reason 'the driver does not advertise HAGS support (HwSchMode absent) - skipped rather than forced')
+        }
+        else {
+            Set-OptRegistryValue -State $State -Path $hagsPath `
+                -Name 'HwSchMode' -Type DWord -Value 2 -Section '3.1' -Tier 'Safe' `
+                -Title 'Hardware-accelerated GPU scheduling' -RequiresReboot -VerifyMode PostReboot | Out-Null
+        }
     }
 
     # Game DVR / capture off.
@@ -63,20 +133,59 @@ function Invoke-OptSection31Registry {
 }
 
 function Invoke-OptSection32Mpo {
+    <#
+        Multi-Plane Overlay disable - symptom-driven, never automatic.
+
+        Two things changed here after review:
+
+        1. Spec 3.2 gates this behind "a detection of whether the symptom
+           exists". Flicker cannot be detected from software, so the honest
+           implementation of that gate is explicit opt-in: this only applies
+           when the user names the section (-Sections 3.2), which is the user
+           reporting the symptom. Running -Tier Experimental alone does NOT
+           apply it.
+
+        2. The Dwm\OverlayTestMode value the spec (and every guide) cites is no
+           longer read on 24H2+ builds - writing it there is a silent no-op.
+           The working mechanism on >= 26100 is
+           GraphicsDrivers\DisableOverlays = 1 (community-verified via dxdiag
+           reporting MPO "Not Supported" afterwards; no Microsoft doc exists
+           for either key). Older builds keep the classic value.
+    #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
 
-    # Disabling Multi-Plane Overlay is the standard fix for desktop flicker and
-    # micro-stutter on RDNA hardware, but it can INCREASE desktop compositing
-    # cost - so it is Experimental, and rollback is a simple value delete.
-    Set-OptRegistryValue -State $State -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' `
-        -Name 'OverlayTestMode' -Type DWord -Value 5 -Section '3.2' -Tier 'Experimental' `
-        -Title 'Disable Multi-Plane Overlay' -RequiresReboot -VerifyMode PostReboot | Out-Null
+    if (-not (Test-OptSectionEnabled -State $State -Section '3.2')) { return }
 
-    if (Test-OptTier -State $State -Required 'Experimental') {
-        [void](Add-OptDecision -State $State -Id 'S-3.2-NOTE' -Section '3.2' -Decision 'NoOp' `
-            -Title 'MPO disable expectations' `
-            -Reason 'only apply this if you actually see desktop flicker or micro-stutter - it can increase compositing cost otherwise')
+    $explicitly = $false
+    $only = $State.Parameters['Sections']
+    if ($only -and $only.Count -gt 0) {
+        $explicitly = Test-OptSectionMatch -Section '3.2' -Patterns $only
+    }
+
+    if (-not $explicitly) {
+        if (Test-OptTier -State $State -Required 'Experimental') {
+            [void](Add-OptDecision -State $State -Id 'S-3.2-OPTIN' -Section '3.2' -Decision 'NoOp' `
+                -Title 'Disable Multi-Plane Overlay' `
+                -Reason 'not applied - this is a fix for visible desktop flicker/micro-stutter, not a general optimization, and it can increase compositing cost. If you have the symptom, re-run with: -Tier Experimental -Sections 3.2')
+        }
+        return
+    }
+
+    $build = [int]$State.Profile.OS.BuildNumber
+    if ($build -ge 26100) {
+        Set-OptRegistryValue -State $State -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' `
+            -Name 'DisableOverlays' -Type DWord -Value 1 -Section '3.2' -Tier 'Experimental' `
+            -Title 'Disable Multi-Plane Overlay (24H2+ mechanism)' -RequiresReboot -VerifyMode PostReboot | Out-Null
+
+        [void](Add-OptDecision -State $State -Id 'S-3.2-VERIFY' -Section '3.2' -Decision 'NoOp' `
+            -Title 'MPO disable verification' `
+            -Reason 'after rebooting, dxdiag > Save All Information should show MultiplaneOverlay "Not Supported". The legacy Dwm\OverlayTestMode value is not written - builds 26100+ no longer read it.')
+    }
+    else {
+        Set-OptRegistryValue -State $State -Path 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' `
+            -Name 'OverlayTestMode' -Type DWord -Value 5 -Section '3.2' -Tier 'Experimental' `
+            -Title 'Disable Multi-Plane Overlay' -RequiresReboot -VerifyMode PostReboot | Out-Null
     }
 }
 

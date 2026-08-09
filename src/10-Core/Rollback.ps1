@@ -372,6 +372,18 @@ function Invoke-OptRollbackEntry {
             return @{ Result = 'RESTORED'; Detail = "re-enabled power management on $restored of $($ids.Count) USB endpoint(s)" }
         }
 
+        'WindowsOptionalFeature' {
+            $feature = [string]$Change.Target.FeatureName
+            try {
+                if ([string]$Change.OldValue -eq 'Enabled') {
+                    Enable-WindowsOptionalFeature -Online -FeatureName $feature -NoRestart -ErrorAction Stop | Out-Null
+                    return @{ Result = 'RESTORED'; Detail = "re-enabled optional feature $feature (reboot required)" }
+                }
+                return @{ Result = 'SKIPPED'; Detail = "feature $feature was not enabled before the run" }
+            }
+            catch { return @{ Result = 'FAILED'; Detail = $_.Exception.Message } }
+        }
+
         'AppxPackage' {
             return @{ Result = 'IRREVERSIBLE'; Detail = "Appx removal cannot be undone by this script - reinstall '$($Change.Name)' from the Store" }
         }

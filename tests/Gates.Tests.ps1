@@ -227,8 +227,23 @@ Describe 'Gate matrix - blanket safety assertions' {
         $r.Capabilities['BcdEdit'] | Should -BeFalse
     }
 
-    It 'still permits bcdedit when BitLocker is acknowledged explicitly' {
-        $p = New-Cs2OptTestProfile @{ 'Security.BitLockerAnyProtected' = $true }
+    It 'still blocks bcdedit when acknowledged but NO recovery protector is confirmed' {
+        # Spec 1.5.4 requires BOTH the switch AND a confirmed recovery
+        # protector. Acknowledgement without a key is the lockout scenario the
+        # spec calls the single most likely way this script bricks a machine.
+        $p = New-Cs2OptTestProfile @{
+            'Security.BitLockerAnyProtected'        = $true
+            'Security.BitLockerRecoveryKeyEscrowed' = $false
+        }
+        $r = Resolve-OptGates -ProfileData $p -Tier 'Safe' -Options @{ BitLockerAcknowledged = $true }
+        $r.Capabilities['BcdEdit'] | Should -BeFalse
+    }
+
+    It 'permits bcdedit only with acknowledgement AND a confirmed recovery protector' {
+        $p = New-Cs2OptTestProfile @{
+            'Security.BitLockerAnyProtected'        = $true
+            'Security.BitLockerRecoveryKeyEscrowed' = $true
+        }
         $r = Resolve-OptGates -ProfileData $p -Tier 'Safe' -Options @{ BitLockerAcknowledged = $true }
         $r.Capabilities.Contains('BcdEdit') | Should -BeFalse
     }

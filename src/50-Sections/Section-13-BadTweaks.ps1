@@ -1,10 +1,16 @@
 <#
-    Section 13 - detect and offer to revert known-harmful "optimizations".
+    Section 13 - detect and revert known-harmful "optimizations".
 
     These appear constantly in CS2 optimization videos and are either useless,
-    harmful, or anti-cheat risks. The starred ones in the spec are detected here
-    and reverted, because leaving them in place actively costs the user
-    performance or FACEIT access.
+    harmful, or anti-cheat risks.
+
+    DELIBERATE DEVIATION from spec 13, which says "detect and OFFER to revert"
+    the starred items: this reverts them directly. Rationale: every starred
+    item is unambiguously harmful (a disabled pagefile, disabled TRIM,
+    hypervisorlaunchtype Off on a FACEIT machine), every revert is recorded in
+    the manifest and undoable with -Rollback, and an interactive prompt would
+    break the script's run-once, no-interaction contract. -DryRun remains the
+    way to preview them, like every other change.
 #>
 
 function Invoke-OptSection13 {

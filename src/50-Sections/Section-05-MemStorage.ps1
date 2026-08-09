@@ -96,15 +96,15 @@ function Invoke-OptSection52Filesystem {
     if (-not (Test-OptSectionEnabled -State $State -Section '5.2')) { return }
     if (-not (Test-OptTier -State $State -Required 'Safe')) { return }
 
-    # 8.3 name creation is deliberately NOT done through fsutil. The spec's
-    # command is 'fsutil behavior set disable8dot3name 1', but on current
-    # Windows 11 builds 'behavior query disable8dot3name' is not a valid option
-    # (the tool prints its usage text), so the query parsed nothing, the
-    # already-correct check could never pass, and the setting re-planned on
-    # every run - and never actually applied. Verified live: the registry value
-    # was still at its default of 2 after a real run. Writing the underlying
-    # value directly gets typed comparison, manifest, rollback and verification
-    # from the registry engine for free. (1 = disable 8.3 names on all volumes.)
+    # 8.3 name creation is deliberately NOT done through fsutil. The spec spells
+    # it 'disable8dot3name', but on current builds the behavior-query option is
+    # named 'disable8dot3' - the spec's spelling makes the tool print its usage
+    # text, so the query parsed nothing, the already-correct check could never
+    # pass, and the setting re-planned on every run without ever applying.
+    # Verified live: the registry value was still at its default of 2 after a
+    # real run. Writing the underlying value directly gets typed comparison,
+    # manifest, rollback and verification from the registry engine for free.
+    # (1 = disable 8.3 names on all volumes.)
     Set-OptRegistryValue -State $State -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' `
         -Name 'NtfsDisable8dot3NameCreation' -Type DWord -Value 1 -Section '5.2' -Tier 'Safe' `
         -Title 'Disable 8.3 name creation' | Out-Null

@@ -30,7 +30,12 @@ function Invoke-OptGpuChecklist {
 
     if ($vendor -eq 'AMD' -and (Test-OptSectionEnabled -State $State -Section '3.4')) {
         [void](Add-OptManual -State $State -Id 'M-3.4' -Section '3.4' -Title 'AMD Adrenalin settings' -Detail @'
-  Radeon Anti-Lag ................ On  (STANDARD ONLY - never Anti-Lag+)
+  Latency: for CS2 specifically, enable ANTI-LAG 2 IN THE GAME's video settings
+  (engine-integrated via a Valve partnership; needs Adrenalin 24.6.1+ and an
+  RX 5000-series or newer card). It supersedes the driver-panel Anti-Lag for
+  this title and is explicitly ban-safe. Driver-panel standard Anti-Lag is the
+  fallback for older drivers only.
+
   Radeon Chill ................... Off
   Radeon Boost ................... Off
   Enhanced Sync .................. Off
@@ -40,12 +45,16 @@ function Invoke-OptGpuChecklist {
   Surface Format Optimization .... On
   Tessellation Mode .............. Override, 8x or Off
   FreeSync ....................... On at the display (inert when fps > refresh, harmless)
+  Frame rate target .............. worth an A/B: a DRIVER-level cap at roughly
+                                   your sustained fps gives flatter frame times
+                                   than CS2's own fps_max, which paces poorly
   AMD Software ................... disable auto-start with Windows,
                                    disable "AMD User Experience Program" telemetry,
                                    disable the in-game overlay AND its hotkeys entirely
 
-  WARNING: never enable Anti-Lag+. It triggered VAC bans in CS2 in October 2023.
-  Standard Anti-Lag is fine, and game-integrated Anti-Lag 2 is fine.
+  WARNING: never enable Anti-Lag+ (the 2023 feature). It triggered VAC bans in
+  CS2 in October 2023. Anti-Lag 2 is a different, game-integrated mechanism and
+  is fine.
 '@)
     }
 
@@ -103,7 +112,7 @@ function Invoke-OptSteamChecklist {
     else { 'fps_max 0' }
 
     $latency = switch ($p.GPU.PrimaryVendor) {
-        'AMD'    { 'Latency reduction: use Adrenalin Anti-Lag (standard - NEVER Anti-Lag+)' }
+        'AMD'    { 'Latency reduction: enable in-game ANTI-LAG 2 (needs Adrenalin 24.6.1+, RX 5000+; ban-safe, supersedes driver-panel Anti-Lag for CS2 - and NEVER Anti-Lag+)' }
         'NVIDIA' { 'Latency reduction: enable in-game NVIDIA Reflex' }
         'Intel'  { 'Latency reduction: use Arc Low Latency Mode' }
         default  { 'Latency reduction: GPU vendor unknown - no recommendation' }
@@ -111,8 +120,9 @@ function Invoke-OptSteamChecklist {
 
     [void](Add-OptManual -State $State -Id 'M-11' -Section '11' -Title 'Steam and CS2 settings' -Detail @"
   LAUNCH OPTIONS (Steam > CS2 > Properties):
-      -novid -nojoy -console
+      -nojoy -console
 
+      -novid is deliberately absent: CS2 has no intro video, so it does nothing
       Do NOT add -high      : section 6.4 already sets priority correctly via IFEO
       Do NOT add -threads N : CS2's own scheduler handles this better
       -allow_third_party_software only if you genuinely need RTSS - it adds risk
@@ -128,6 +138,14 @@ function Invoke-OptSteamChecklist {
       engine_no_focus_sleep 0   if you alt-tab during warmup
       mat_queue_mode       leave at default (-1); forcing it is a legacy CS:GO habit
 
+  A/B EXPERIMENTS (test one at a time; anecdote-grade, not guaranteed):
+      engine_low_latency_sleep_after_client_tick 1
+                           reported to smooth input on tick frames; works best
+                           WITH a frame cap, and can reduce fps when uncapped
+      Driver-level fps cap at your sustained fps instead of CS2's fps_max -
+                           CS2's own limiter paces poorly (fps bounces under
+                           the target); a driver cap holds frame times flat
+
   STEAM CLIENT:
       Disable the Steam Overlay in-game (FACEIT does not require it)
       Disable Remote Play / In-Home Streaming host
@@ -140,6 +158,10 @@ function Invoke-OptSteamChecklist {
 function Invoke-OptAudioChecklist {
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
+
+    # Honour section blocking like every other checklist - G-CS2-ABSENT blocks
+    # section 11, and the audio advice is CS2-specific.
+    if (-not (Test-OptSectionEnabled -State $State -Section '11.4')) { return }
 
     $a = $State.Profile.Audio
     if (-not $a.DefaultName) { return }

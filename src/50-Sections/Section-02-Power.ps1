@@ -190,6 +190,24 @@ function Invoke-OptSection22Values {
         return
     }
 
+    # Spec 1.5.4's laptop row: "Skip 2.1 and the whole of 2.2 EXCEPT USB
+    # selective suspend." So on a laptop only that one setting proceeds - the
+    # throttle floors, core parking and ASPM changes are a thermal-throttling
+    # trap on battery-cooled hardware. The DC-value (/setdcvalueindex) opt-in
+    # path the spec mentions is deliberately not implemented; the AC-value
+    # writes below apply when plugged in, which is the only state a laptop
+    # should be competing in anyway.
+    $isLaptop = (ConvertTo-OptBool -Value $State.Profile.Power.IsLaptop) -eq $true
+    if ($isLaptop) {
+        [void](Add-OptDecision -State $State -Id 'S-2.2-LAPTOP' -Section '2.2' -Decision 'Off' `
+            -Title 'Processor / PCIe / disk power values' -Severity 'Warning' `
+            -Reason 'laptop - skipped except USB selective suspend, per the spec laptop rule')
+
+        Invoke-OptPowerCfgSetting -State $State -SubGroup '2a737441-1930-4402-8d77-b2bebba308a3' `
+            -Setting '48e6b7a6-50f5-4782-a5d4-53bb8f07e226' -Value 0 -Title 'USB selective suspend off'
+        return
+    }
+
     Invoke-OptPowerCfgSetting -State $State -SubGroup 'SUB_PROCESSOR' -Setting 'PROCTHROTTLEMIN' -Value 100 -Title 'Minimum processor state 100%'
     Invoke-OptPowerCfgSetting -State $State -SubGroup 'SUB_PROCESSOR' -Setting 'PROCTHROTTLEMAX' -Value 100 -Title 'Maximum processor state 100%'
 
@@ -333,6 +351,15 @@ function Invoke-OptSection24DevicePower {
     try {
         $targets = @(Get-PnpDevice -Class 'HIDClass', 'Mouse', 'Keyboard' -Status OK -ErrorAction Stop |
                      Where-Object { $_.InstanceId -like 'USB\*' })
+    }
+    catch { }
+
+    # USB root hubs too (spec 2.4's second bullet): a hub that idles takes its
+    # downstream mouse and keyboard with it, so clearing power saving only on
+    # the endpoints leaves the failure mode in place one level up.
+    try {
+        $targets += @(Get-PnpDevice -Class 'USB' -Status OK -ErrorAction Stop |
+                      Where-Object { $_.FriendlyName -match 'Root Hub|USB Hub' })
     }
     catch { }
 

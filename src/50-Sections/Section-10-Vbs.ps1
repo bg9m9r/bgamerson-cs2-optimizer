@@ -30,6 +30,16 @@ function Invoke-OptSection10 {
         return
     }
 
+    # --- Windows 11 itself is now a FACEIT requirement -----------------------
+    # Announced Oct 2025: Windows 11 becomes mandatory on FACEIT from
+    # 14 Oct 2026, alongside the TPM/Secure Boot mandate (all players since
+    # 25 Nov 2025) and the staged IOMMU/VBS enforcement.
+    if ((ConvertTo-OptBool -Value $State.Profile.OS.IsWin11) -eq $false) {
+        [void](Add-OptFinding -State $State -Id 'S-10-WIN11' -Section '10' `
+            -Title 'Windows 10 with FACEIT AC installed' -Severity 'Critical' `
+            -Reason 'FACEIT requires Windows 11 from 14 October 2026. This machine is not on Windows 11 - upgrading is a prerequisite for everything else in this report.')
+    }
+
     # --- compliance summary ---
     $compliant = ($s.VbsRunning -eq $true) -and ($s.IommuEnabled -ne $false) -and
                  ($s.SecureBootEnabled -eq $true) -and ($s.TpmReady -eq $true)
