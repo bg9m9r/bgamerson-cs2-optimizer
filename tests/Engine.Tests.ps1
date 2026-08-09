@@ -56,6 +56,45 @@ Describe 'Set-OptRegistryValue' {
         $info.Value | Should -Be -1
     }
 
+    It 'writes a SINGLE-entry MultiString correctly (the pagefile case)' {
+        # Regression: PowerShell unrolls a one-element array on function
+        # return, so ConvertTo-OptRegistryData handed SetValue a bare String
+        # against RegistryValueKind.MultiString and the write threw. Caught on
+        # a real run - the 5.1 pagefile is exactly a single-entry MULTI_SZ.
+        $r = Set-OptRegistryValue -State $script:state `
+            -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' `
+            -Name 'PagingFiles' -Type MultiString -Value @('C:\pagefile.sys 16384 16384') `
+            -Section '5.1' -Tier 'Safe'
+
+        $r.Action | Should -Be 'Applied'
+
+        $info = Get-OptRegistryValueInfo -State $script:state `
+            -Hive 'HKCU' -SubKey "$($script:state['SandboxRoot'])\HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" `
+            -Name 'PagingFiles'
+        $info.Kind | Should -Be 'MultiString'
+        @($info.Value).Count | Should -Be 1
+        @($info.Value)[0] | Should -Be 'C:\pagefile.sys 16384 16384'
+
+        # Idempotent on the second pass.
+        $r2 = Set-OptRegistryValue -State $script:state `
+            -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' `
+            -Name 'PagingFiles' -Type MultiString -Value @('C:\pagefile.sys 16384 16384') `
+            -Section '5.1' -Tier 'Safe'
+        $r2.Action | Should -Be 'AlreadyCorrect'
+    }
+
+    It 'writes a single-byte Binary value correctly (same unroll hazard)' {
+        $r = Set-OptRegistryValue -State $script:state -Path 'HKLM:\SOFTWARE\Test' -Name 'OneByte' `
+            -Type Binary -Value ([byte[]]@(0x5A)) -Section '4.1' -Tier 'Safe'
+        $r.Action | Should -Be 'Applied'
+
+        $info = Get-OptRegistryValueInfo -State $script:state `
+            -Hive 'HKCU' -SubKey "$($script:state['SandboxRoot'])\HKLM\SOFTWARE\Test" -Name 'OneByte'
+        $info.Kind | Should -Be 'Binary'
+        @($info.Value).Count | Should -Be 1
+        @($info.Value)[0] | Should -Be 0x5A
+    }
+
     It 'respects tier gating' {
         $script:state.Tier = 'Safe'
         $r = Set-OptRegistryValue -State $script:state -Path 'HKLM:\SOFTWARE\Test' -Name 'Exp' `
@@ -164,9 +203,18 @@ Describe 'Rollback round-trip' {
 
         $before = Get-Cs2OptSandboxSnapshot -SandboxRoot $sandbox
 
-        Set-OptRegistryValue -State $script:state -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' `
+        # Assert the write actually happened. This test once passed VACUOUSLY:
+        # the binary write itself was broken (unrolled byte[] -> Object[]), so
+        # nothing changed and "rollback restored everything" was trivially
+        # true while hiding two real bugs at once.
+        $write = Set-OptRegistryValue -State $script:state -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' `
             -Type Binary -Value ([byte[]]@(0x9E, 0x1E, 0x07, 0x80, 0x12, 0x00, 0x00, 0x00)) `
-            -Section '8.3' -Tier 'Aggressive' | Out-Null
+            -Section '8.3' -Tier 'Aggressive'
+        $write.Action | Should -Be 'Applied'
+
+        $mid = (Get-ItemProperty -LiteralPath $seedPath -Name 'UserPreferencesMask').UserPreferencesMask
+        [System.Convert]::ToBase64String([byte[]]$mid) |
+            Should -Not -Be ([System.Convert]::ToBase64String($original)) -Because 'the write must have really changed the value'
 
         Write-OptManifest -State $script:state -Final
         Invoke-OptRollback -State $script:state -ManifestPath $script:state.Paths.RunManifest | Out-Null

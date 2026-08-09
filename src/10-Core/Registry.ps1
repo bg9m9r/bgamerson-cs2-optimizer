@@ -165,8 +165,14 @@ function ConvertTo-OptRegistryData {
         'QWord'        { return [long]$Value }
         'String'       { return [string]$Value }
         'ExpandString' { return [string]$Value }
-        'MultiString'  { return [string[]]@($Value) }
-        'Binary'       { return [byte[]]$Value }
+        # The leading comma is load-bearing: PowerShell unrolls a ONE-element
+        # array on function return, handing SetValue a bare String against
+        # RegistryValueKind.MultiString - which throws "type of the value
+        # object did not match". Found live: the 5.1 pagefile write (a
+        # single-entry MULTI_SZ) failed with exactly that on a real run.
+        'MultiString'  { return , [string[]]@($Value) }
+        # Same unroll hazard for a one-byte REG_BINARY.
+        'Binary'       { return , [byte[]]$Value }
         default        { return $Value }
     }
 }
@@ -351,21 +357,39 @@ function Set-OptRegistryValue {
 
     # 8. apply
     $base = $null; $key = $null
-    try {
-        $base = Get-OptRegistryHiveKey -Hive $resolved.Hive
-        $key  = $base.CreateSubKey($resolved.SubKey)
-        if (-not $key) { throw "could not open or create $($resolved.Display)" }
+    # Two attempts with a short pause. Observed live: an elevated run during the
+    # overnight maintenance window got a transient UnauthorizedAccessException
+    # writing an HKLM policy value that a standalone probe wrote fine minutes
+    # later - policy refresh and servicing contend for these keys. One retry
+    # absorbs that class of failure; a persistent ACL denial still fails
+    # cleanly on the second attempt.
+    $writeError = $null
+    foreach ($attempt in 1, 2) {
+        $base = $null; $key = $null
+        try {
+            $base = Get-OptRegistryHiveKey -Hive $resolved.Hive
+            $key  = $base.CreateSubKey($resolved.SubKey)
+            if (-not $key) { throw "could not open or create $($resolved.Display)" }
 
-        $key.SetValue($Name, $desired, [Microsoft.Win32.RegistryValueKind]::$Type)
+            $key.SetValue($Name, $desired, [Microsoft.Win32.RegistryValueKind]::$Type)
+            $writeError = $null
+            break
+        }
+        catch {
+            $writeError = $_.Exception.Message
+            if ($attempt -eq 1) { Start-Sleep -Milliseconds 300 }
+        }
+        finally {
+            if ($key)  { $key.Dispose() }
+            if ($base) { $base.Dispose() }
+        }
     }
-    catch {
+
+    if ($writeError) {
         [void](Add-OptDecision -State $State -Id $Id -Section $Section -Decision 'Failed' `
-            -Title $Title -Reason "write failed: $($_.Exception.Message)" -Severity 'Error')
-        return @{ Action = 'Failed'; Reason = $_.Exception.Message }
-    }
-    finally {
-        if ($key)  { $key.Dispose() }
-        if ($base) { $base.Dispose() }
+            -Title $Title -Severity 'Error' `
+            -Reason "write failed after retry: $writeError - a re-run usually clears transient contention; a repeat failure means the key is access-protected on this build")
+        return @{ Action = 'Failed'; Reason = $writeError }
     }
 
     $change = New-OptChangeRecord -State $State -Type 'Registry' -Section $Section -Tier $Tier `

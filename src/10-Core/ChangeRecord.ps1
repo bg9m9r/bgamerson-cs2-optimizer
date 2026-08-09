@@ -74,6 +74,14 @@ function ConvertTo-OptStorableValue {
 
         Binary is stored as a tagged base64 envelope that survives the round trip
         unambiguously.
+
+        The tag is named '_kind', NOT '__type': Windows PowerShell 5.1's
+        ConvertFrom-Json is built on JavaScriptSerializer, which reserves
+        '__type' as type-hint metadata and SILENTLY CONSUMES it at any nesting
+        depth - the envelope came back tagless and rollback could not restore
+        the value. (Found the hard way: the round-trip test had been passing
+        vacuously because the binary WRITE was also broken; fixing the write
+        exposed the eaten tag.)
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][AllowNull()]$Value)
@@ -82,15 +90,15 @@ function ConvertTo-OptStorableValue {
 
     if ($Value -is [byte[]]) {
         return [ordered]@{
-            '__type' = 'binary'
+            '_kind'  = 'binary'
             'base64' = [System.Convert]::ToBase64String($Value)
         }
     }
 
     if ($Value -is [string[]]) {
         return [ordered]@{
-            '__type' = 'multistring'
-            'items'  = @($Value)
+            '_kind' = 'multistring'
+            'items' = @($Value)
         }
     }
 
@@ -104,12 +112,18 @@ function ConvertFrom-OptStorableValue {
     if ($null -eq $Value) { return $null }
 
     # After a JSON round trip this arrives as PSCustomObject, not a hashtable.
+    # '_kind' is the tag; '__type' is accepted as a legacy fallback for any
+    # manifest written before the rename (it survives only if such a manifest
+    # is read on PowerShell 7 tooling - 5.1's deserializer eats it - but
+    # accepting it costs nothing).
     $typeTag = $null
     if ($Value -is [System.Collections.IDictionary]) {
-        if ($Value.Contains('__type')) { $typeTag = [string]$Value['__type'] }
+        if ($Value.Contains('_kind'))       { $typeTag = [string]$Value['_kind'] }
+        elseif ($Value.Contains('__type'))  { $typeTag = [string]$Value['__type'] }
     }
     elseif ($Value -is [System.Management.Automation.PSCustomObject]) {
-        $prop = $Value.PSObject.Properties['__type']
+        $prop = $Value.PSObject.Properties['_kind']
+        if (-not $prop) { $prop = $Value.PSObject.Properties['__type'] }
         if ($prop) { $typeTag = [string]$prop.Value }
     }
 

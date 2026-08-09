@@ -183,28 +183,53 @@ function Invoke-OptSection53Indexing {
     $libs = @($State.Profile.Games.LibraryPaths)
     if ($libs.Count -eq 0) { return }
 
-    # The indexer's scope rules live under this key as URL-shaped rules.
-    $rulesKey = 'HKLM:\SOFTWARE\Microsoft\Windows Search\CrawlScopeManager\Windows\SystemIndex\WorkingSetRules'
-
-    $i = 0
+    # The earlier mechanism - writing custom subkeys under the indexer's
+    # WorkingSetRules registry key - is IMPOSSIBLE by design: that key grants
+    # write only to SYSTEM, WSearch and TrustedInstaller (verified live:
+    # Administrators hold ReadKey+CreateLink only, and the run failed with
+    # access denied). The supported programmatic route, ISearchCrawlScopeManager,
+    # has no scriptable registration on this build. So this section now does
+    # what is actually true:
+    #
+    #   1. A library under Program Files is OUTSIDE the indexer's default crawl
+    #      scope - there is nothing to exclude, and saying otherwise would be
+    #      claiming a win that does not exist.
+    #   2. A library anywhere else gets a manual checklist item with the exact
+    #      Settings path - three clicks, done once.
+    $inScope = New-Object System.Collections.ArrayList
     foreach ($lib in $libs) {
-        $url = "file:///$($lib -replace '\\','/')"
-        $sub = "$rulesKey\CS2Opt$i"
+        $underProgramFiles = (Test-OptPathUnder -Path $lib -Parent $env:ProgramFiles) -or
+                             (${env:ProgramFiles(x86)} -and (Test-OptPathUnder -Path $lib -Parent ${env:ProgramFiles(x86)}))
+        if ($underProgramFiles) {
+            [void](Add-OptDecision -State $State -Id "S-5.3-$lib" -Section '5.3' -Decision 'NoOp' `
+                -Title 'Search indexing' `
+                -Reason "$lib is under Program Files, which the indexer does not crawl by default - no exclusion needed")
+        }
+        else {
+            [void]$inScope.Add($lib)
+        }
+    }
 
-        Set-OptRegistryValue -State $State -Path $sub -Name 'URL' -Type String -Value $url `
-            -Section '5.3' -Tier 'Safe' -Title "Search exclusion rule for $lib" | Out-Null
-        Set-OptRegistryValue -State $State -Path $sub -Name 'Include' -Type DWord -Value 0 `
-            -Section '5.3' -Tier 'Safe' -Title "Search exclusion (exclude) for $lib" | Out-Null
-        $i++
+    if ($inScope.Count -gt 0) {
+        [void](Add-OptManual -State $State -Id 'M-5.3' -Section '5.3' `
+            -Title 'Exclude Steam libraries from Windows Search' `
+            -Reason 'the indexer scope is writable only through its own service; the settings UI is the supported path' `
+            -Detail (@(
+                '  These Steam libraries sit outside Program Files, so the indexer MAY crawl them:'
+                ''
+                (@($inScope) | ForEach-Object { "      $_" })
+                ''
+                '  Exclude them once via:'
+                '      Settings > Privacy & security > Searching Windows > Exclude folders > Add'
+                ''
+                '  (The exclusion registry key is writable only by the Search service itself,'
+                '  so this cannot be automated safely from a script.)'
+            ) -join "`n"))
     }
 
     [void](Add-OptDecision -State $State -Id 'S-5.3-WSEARCH' -Section '5.3' -Decision 'NoOp' `
         -Title 'WSearch service' `
         -Reason 'left running by design - disabling it wrecks Start menu search for no measurable in-game gain')
-
-    [void](Add-OptDecision -State $State -Id 'S-5.3-TIMING' -Section '5.3' -Decision 'NoOp' `
-        -Title 'Indexer exclusion timing' `
-        -Reason 'the crawl-scope rules are read when WSearch next restarts (or at reboot) - the service is deliberately not bounced mid-run, and already-indexed files age out rather than being purged instantly')
 }
 
 function Set-OptMMAgentField {
