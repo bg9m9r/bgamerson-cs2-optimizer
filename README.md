@@ -64,7 +64,7 @@ Then right-click `Run-Optimize-CS2.cmd` → **Run as administrator**.
 
 ## Quick start
 
-Requires **Windows PowerShell 5.1** (not PowerShell 7 — see [below](#why-windows-powershell-51)) and an **elevated** prompt.
+Requires **Windows PowerShell 5.1** (not PowerShell 7 — see [below](#why-windows-powershell-51)). Administrator rights are required; if you launch it unelevated it asks via a **UAC prompt** and continues in an elevated window. Pass `-NoElevate` to suppress the prompt and exit instead (for scripts and CI).
 
 Always start here. It changes nothing and prints exactly what it would do:
 
@@ -123,6 +123,7 @@ Cumulative — `Aggressive` includes `Safe`, `Experimental` includes both.
 | `-ProfileFrom <path>` | Load a captured profile instead of probing hardware. Implies `-DryRun`. |
 | `-AllowNetworkRestart` | Permit the single adapter restart that section 7.1 needs to take effect. Expect a brief link bounce. |
 | `-BitLockerAcknowledged` | Permit `bcdedit` changes while BitLocker is on. Read the warning first. |
+| `-NoElevate` | When unelevated, print a message and exit 2 instead of showing a UAC prompt. |
 
 Everything lands in `%ProgramData%\cs2-opt\`: `logs\`, `backup\`, `runs\<timestamp>\` (manifest, journal, markdown report), and `manifest.json` pointing at the latest run.
 

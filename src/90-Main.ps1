@@ -19,8 +19,17 @@ function Invoke-OptMain {
     try {
         # Two concurrent runs would corrupt the manifest.
         $mutex = New-Object System.Threading.Mutex($false, 'Global\Cs2Opt')
-        if (-not $mutex.WaitOne(0)) {
-            throw 'Another cs2-opt run is already in progress.'
+        $acquired = $false
+        try { $acquired = $mutex.WaitOne(0) }
+        catch [System.Threading.AbandonedMutexException] {
+            # A previous run died (crash, killed window) while holding the
+            # mutex. .NET hands US ownership along with this exception, so it
+            # IS acquired - treating it as a failure would lock the user out of
+            # their own machine until reboot.
+            $acquired = $true
+        }
+        if (-not $acquired) {
+            throw 'Another optimizer run is already in progress. Wait for it to finish, or close its window.'
         }
 
         Write-OptBanner -State $State
@@ -277,6 +286,52 @@ if ($ProfileFrom) { $OptParameters['DryRun'] = $true }
 $script:Opt = New-OptState -Tier $Tier -Parameters $OptParameters
 # Real runs echo decisions to the console; the test suite leaves this off.
 $script:Opt['ConsoleDecisions'] = $true
-[void](Initialize-OptPaths -State $script:Opt -ManifestPath $ManifestPath)
 
-Invoke-OptMain -State $script:Opt
+# ProgramData can be locked down by AV policy or a mangled ACL. Falling back to
+# TEMP keeps the run alive - and more importantly keeps the JOURNAL alive, since
+# a run that mutates without a journal cannot be rolled back.
+try {
+    [void](Initialize-OptPaths -State $script:Opt -ManifestPath $ManifestPath)
+}
+catch {
+    $fallbackRoot = Join-Path $env:TEMP 'cs2-opt'
+    Write-Host "  Could not use $env:ProgramData\cs2-opt ($($_.Exception.Message))" -ForegroundColor Yellow
+    Write-Host "  Falling back to $fallbackRoot for logs, backups and the manifest." -ForegroundColor Yellow
+    [void](Initialize-OptPaths -State $script:Opt -Root $fallbackRoot -ManifestPath (Join-Path $fallbackRoot 'manifest.json'))
+}
+
+# Global backstop: NOTHING may escape as a raw exception dump. A red stack
+# trace on a system-mutating script reads as "my machine is now broken", even
+# when the failure was as mundane as a locked file.
+#
+# Exit codes: 0 success, 1 unexpected error, 2 aborted by a safety gate.
+$script:OptExitCode = 0
+try {
+    Invoke-OptMain -State $script:Opt
+    if ($script:Opt.Aborted) { $script:OptExitCode = 2 }
+}
+catch {
+    $script:OptExitCode = 1
+
+    # Salvage first, explain second: consolidate whatever the journal has into
+    # the manifest so -Rollback can still undo everything applied so far.
+    try { Write-OptManifest -State $script:Opt -Final } catch { }
+
+    Write-Host ''
+    Write-Host '  The run stopped early:' -ForegroundColor Red
+    Write-Host "    $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host ''
+    if (@($script:Opt.Changes).Count -gt 0 -and -not $script:Opt.DryRun) {
+        Write-Host "  $(@($script:Opt.Changes).Count) change(s) were applied before the stop and are recorded." -ForegroundColor Gray
+        Write-Host '  To undo them:  Optimize-CS2.ps1 -Rollback' -ForegroundColor Cyan
+    }
+    else {
+        Write-Host '  Nothing had been changed yet.' -ForegroundColor Gray
+    }
+    if ($script:Opt.Paths -and $script:Opt.Paths.Transcript) {
+        Write-Host "  Full log: $($script:Opt.Paths.Transcript)" -ForegroundColor Gray
+    }
+    Write-Host ''
+}
+
+exit $script:OptExitCode

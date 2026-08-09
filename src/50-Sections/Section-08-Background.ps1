@@ -174,9 +174,20 @@ function Invoke-OptSection83VisualFx {
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
 
-    Set-OptRegistryValue -State $State -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' `
+    $fx = Set-OptRegistryValue -State $State -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' `
         -Name 'VisualFXSetting' -Type DWord -Value 2 -Section '8.3' -Tier 'Aggressive' `
-        -Title 'Visual effects: adjust for best performance' | Out-Null
+        -Title 'Visual effects: adjust for best performance'
+
+    # Honesty about mechanism: VisualFXSetting selects the radio button in the
+    # Performance Options dialog; the shell reads it and applies the individual
+    # effect toggles at the next sign-in. Claiming it "took effect" immediately
+    # would be wrong, so flag the logoff instead.
+    if ($fx.Action -in @('Applied', 'DryRun')) {
+        $State.LogoffRequired = $true
+        [void](Add-OptDecision -State $State -Id 'S-8.3-LOGON' -Section '8.3' -Decision 'NoOp' `
+            -Title 'Visual effects timing' `
+            -Reason 'takes effect at the next sign-in - the shell applies the individual effect toggles from this setting at logon')
+    }
 
     Set-OptRegistryValue -State $State -Path 'HKCU:\Control Panel\Desktop' `
         -Name 'MenuShowDelay' -Type String -Value '0' -Section '8.3' -Tier 'Aggressive' `

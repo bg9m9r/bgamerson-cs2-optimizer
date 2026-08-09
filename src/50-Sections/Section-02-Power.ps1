@@ -215,7 +215,16 @@ function Invoke-OptSection22Values {
         -Setting 'ee12f906-d277-404b-b6da-e5fa1a576df5' -Value 0 -Title 'PCIe link state power management off'
 
     Invoke-OptPowerCfgSetting -State $State -SubGroup 'SUB_DISK'  -Setting 'DISKIDLE'  -Value 0 -Title 'Never turn off hard disk'
-    Invoke-OptPowerCfgSetting -State $State -SubGroup 'SUB_VIDEO' -Setting 'VIDEOIDLE' -Value 0 -Title 'Never turn off display'
+
+    # VIDEOIDLE (the display-off timeout) is deliberately LEFT ALONE. The spec
+    # table says "0 (or leave to preference)", and this takes the second option:
+    # the timeout only ever fires while nobody is at the PC, so forcing the
+    # panel to stay on has zero in-game benefit while burning an OLED-class
+    # competitive monitor at idle. A tweak with no upside and a real downside
+    # does not belong in the Safe tier.
+    [void](Add-OptDecision -State $State -Id 'S-2.2-VIDEOIDLE' -Section '2.2' -Decision 'NoOp' `
+        -Title 'Display-off timeout' `
+        -Reason 'left at your preference by design - it only fires when you are away from the PC, so changing it buys nothing in-game and would keep the panel lit at idle')
 
     # Commit the scheme once at the end of the block, not per setting.
     $scheme = [string]$State['ActiveSchemeGuid']

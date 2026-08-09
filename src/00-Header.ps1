@@ -1,5 +1,11 @@
 #Requires -Version 5.1
-#Requires -RunAsAdministrator
+
+# NOTE: deliberately NOT '#Requires -RunAsAdministrator'. That directive aborts
+# before the param block is even parsed, dumping a raw ParentContainsErrorRecord
+# exception at the user - the single most common way to "crash" this script is
+# simply double-clicking it unelevated. Spec 1.2.1 asks for an elevation check
+# that fails fast WITH A CLEAR MESSAGE, so the check is done in code below,
+# where it can also offer to relaunch elevated.
 
 <#
 .SYNOPSIS
@@ -97,7 +103,11 @@ param(
     [string]$ProfileFrom,
     [string[]]$Sections,
     [string[]]$ExcludeSections,
-    [switch]$AllowNetworkRestart
+    [switch]$AllowNetworkRestart,
+
+    # Suppress the UAC self-relaunch when unelevated: print the message and
+    # exit 2 instead. For CI and scripted callers that must never pop a prompt.
+    [switch]$NoElevate
 )
 
 # StrictMode 3.0 rather than Latest: 3.0 still catches uninitialised variables
@@ -115,10 +125,73 @@ $ErrorActionPreference = 'Stop'
 # seconds per call. Chasing -UseWindowsPowerShell per module is a permanent
 # maintenance tax for zero user benefit.
 if ($PSVersionTable.PSEdition -eq 'Core') {
-    throw @"
-This script must run under Windows PowerShell 5.1, not PowerShell $($PSVersionTable.PSVersion).
+    # A clean message and exit, not a throw - a throw paints a red exception
+    # block with a stack trace, which reads as a crash rather than as guidance.
+    Write-Host ''
+    Write-Host "  This script must run under Windows PowerShell 5.1, not PowerShell $($PSVersionTable.PSVersion)." -ForegroundColor Yellow
+    Write-Host '  (Under PowerShell 7 the Appx/NetAdapter/Defender/ScheduledTasks modules load' -ForegroundColor Gray
+    Write-Host '  through compatibility remoting and behave differently.)' -ForegroundColor Gray
+    Write-Host ''
+    Write-Host '  Re-run with:' -ForegroundColor Gray
+    Write-Host "    powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -ForegroundColor Cyan
+    Write-Host ''
+    exit 1
+}
 
-Re-run with:
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PSCommandPath"
-"@
+# --- elevation ---------------------------------------------------------------
+# Everything meaningful here needs admin: HKLM writes, powercfg, Get-Tpm,
+# Confirm-SecureBootUEFI, Get-MMAgent, scheduled tasks. Even -DryRun needs it,
+# because unelevated detection would return Unknown for the security fields and
+# produce a report that does not describe the machine.
+$script:IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+                     ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $script:IsElevated) {
+    if ($NoElevate) {
+        Write-Host ''
+        Write-Host '  Administrator rights are required. Re-run from an elevated PowerShell,' -ForegroundColor Yellow
+        Write-Host '  or run without -NoElevate to get a UAC prompt.' -ForegroundColor Yellow
+        Write-Host ''
+        exit 2
+    }
+
+    Write-Host ''
+    Write-Host '  Administrator rights are required - requesting elevation (UAC prompt)...' -ForegroundColor Yellow
+
+    # Rebuild the exact invocation for the elevated copy. -NoExit keeps the new
+    # window open afterwards, because when this is launched by double-click the
+    # elevated console would otherwise vanish along with all of its output.
+    $relaunchArgs = New-Object System.Collections.ArrayList
+    foreach ($a in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-File')) { [void]$relaunchArgs.Add($a) }
+    [void]$relaunchArgs.Add('"{0}"' -f $PSCommandPath)
+
+    foreach ($kv in $PSBoundParameters.GetEnumerator()) {
+        $value = $kv.Value
+        if ($value -is [System.Management.Automation.SwitchParameter]) {
+            if ($value.IsPresent) { [void]$relaunchArgs.Add('-' + $kv.Key) }
+        }
+        elseif ($value -is [System.Array]) {
+            [void]$relaunchArgs.Add('-' + $kv.Key)
+            [void]$relaunchArgs.Add(($value -join ','))
+        }
+        else {
+            [void]$relaunchArgs.Add('-' + $kv.Key)
+            [void]$relaunchArgs.Add('"{0}"' -f $value)
+        }
+    }
+
+    try {
+        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @($relaunchArgs) | Out-Null
+        Write-Host '  Continuing in the elevated window.' -ForegroundColor Gray
+        Write-Host ''
+        exit 0
+    }
+    catch {
+        # The user clicked No on the UAC prompt (or elevation is policy-blocked).
+        Write-Host ''
+        Write-Host '  Elevation was declined - nothing was changed.' -ForegroundColor Yellow
+        Write-Host '  Re-run from an elevated PowerShell when ready.' -ForegroundColor Gray
+        Write-Host ''
+        exit 2
+    }
 }
