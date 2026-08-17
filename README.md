@@ -94,6 +94,26 @@ The `.cmd` launcher just invokes the script with `-NoProfile -ExecutionPolicy By
 
 ---
 
+## Launching CS2 with core 0 excluded
+
+`dist\Launch-CS2.cmd` is a separate, optional game launcher: it starts CS2 through Steam, waits for `cs2.exe`, and removes **physical core 0** from its CPU affinity — logical CPUs 0 and 1 with SMT, logical CPU 0 without. Windows concentrates kernel DPCs/ISRs and system processes on the first core, so this keeps the game's threads off the core that is busiest with everything that isn't the game.
+
+```
+Launch-CS2.cmd
+```
+
+Why this lives outside the optimizer: the optimizer **never** sets affinity (pinning a game to chosen cores is counterproductive on single-CCD parts and rejected by the spec). Excluding core 0 is the inverse — the game keeps every other core — and even that is per-launch and opt-in, not a persistent system change.
+
+Honest details:
+
+- Mechanism is `SetProcessAffinityMask` — the same documented API Task Manager's *Set affinity* uses. Nothing is injected, nothing stays resident; the script sets the mask and exits. No admin rights needed.
+- The exclusion lasts until the game exits. Launching normally resets it.
+- On CPUs with fewer than 6 physical cores it launches without changing affinity — losing 1 of 4 cores costs more than core 0 contention.
+- If the game is already running: `Launch-CS2.cmd -NoLaunch` just applies the mask.
+- Whether this helps is measurable but small — treat it as an A/B experiment (fixed demo playback, 1%/0.1% lows), not a guaranteed win.
+
+---
+
 ## Tiers
 
 Cumulative — `Aggressive` includes `Safe`, `Experimental` includes both.

@@ -55,6 +55,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
           Copy-Item dist\Optimize-CS2.ps1     -Destination $staging
           Copy-Item dist\Run-Optimize-CS2.cmd -Destination $staging
+          Copy-Item dist\Launch-CS2.ps1      -Destination $staging
+          Copy-Item dist\Launch-CS2.cmd      -Destination $staging
           Copy-Item README.md                 -Destination $staging
           if (Test-Path LICENSE) { Copy-Item LICENSE -Destination $staging }
           Compress-Archive -Path "$staging\*" -DestinationPath $zip -Force
@@ -78,5 +80,7 @@ jobs:
           "${{ steps.pack.outputs.zip }}"
           "dist/Optimize-CS2.ps1"
           "dist/Run-Optimize-CS2.cmd"
+          "dist/Launch-CS2.ps1"
+          "dist/Launch-CS2.cmd"
           --title "${{ steps.pack.outputs.tag }}"
           --notes-file "${{ steps.pack.outputs.notesFile }}"

@@ -209,6 +209,40 @@ $lines = ($full -split "`r?`n").Count
 Write-BuildLog "Built $outScript ($lines lines, sha256:$($sourceHash.Substring(0,16)))" 'Good'
 
 # ---------------------------------------------------------------------------
+# Launcher: a standalone script, copied (not concatenated). It still has to
+# parse and stay ASCII, so run it through the same two gates.
+# ---------------------------------------------------------------------------
+$launcherSrc = Join-Path $repoRoot 'launcher\Launch-CS2.ps1'
+if (Test-Path -LiteralPath $launcherSrc) {
+    $launcherErrors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($launcherSrc, [ref]$null, [ref]$launcherErrors)
+    if ($launcherErrors) {
+        Write-BuildLog 'BUILD FAILED - launcher does not parse:' 'Error'
+        foreach ($e in $launcherErrors) { Write-BuildLog "  line $($e.Extent.StartLineNumber): $($e.Message)" 'Error' }
+        exit 1
+    }
+    $launcherText = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($launcherSrc))
+    if ($launcherText -match '[^\x00-\x7F]') {
+        Write-BuildLog 'BUILD FAILED - launcher contains non-ASCII characters' 'Error'
+        exit 1
+    }
+
+    Copy-Item -LiteralPath $launcherSrc -Destination (Join-Path $repoRoot 'dist\Launch-CS2.ps1') -Force
+    # Double-click friendly: on success the window closes itself (the game is
+    # starting, nobody needs a console); on failure it pauses so the message
+    # does not vanish with the window.
+    Set-Content -LiteralPath (Join-Path $repoRoot 'dist\Launch-CS2.cmd') -Encoding ASCII -Value @'
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Launch-CS2.ps1" %*
+if errorlevel 1 (
+    echo.
+    pause
+)
+'@
+    Write-BuildLog 'Launcher copied to dist (Launch-CS2.ps1 + .cmd)' 'Good'
+}
+
+# ---------------------------------------------------------------------------
 # Final gate: the built artifact must itself parse
 # ---------------------------------------------------------------------------
 $buildErrors = $null

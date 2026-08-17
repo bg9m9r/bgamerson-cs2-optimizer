@@ -48,4 +48,6 @@ jobs:
           path: |
             dist/Optimize-CS2.ps1
             dist/Run-Optimize-CS2.cmd
+            dist/Launch-CS2.ps1
+            dist/Launch-CS2.cmd
           if-no-files-found: error
