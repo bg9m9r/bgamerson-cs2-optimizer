@@ -91,7 +91,15 @@ function Invoke-OptMain {
             try {
                 $prior = Read-OptManifest -Path $State.Paths.Manifest
                 $fp = Test-OptFingerprintMatch -StoredFingerprint $prior.Fingerprint -CurrentFingerprint $State.Profile.Fingerprint
-                if ($fp.Status -eq 'Mismatch') {
+                $failedDetectors = @($State.Profile.DetectionErrors | ForEach-Object { [string]$_.Detector })
+                if ($fp.Status -eq 'Mismatch' -and $failedDetectors.Count -gt 0) {
+                    # A detector that failed leaves its fingerprint component
+                    # empty. That is a detection problem, not a hardware change,
+                    # and saying "hardware changed" would send the user to
+                    # -Rollback for nothing.
+                    Write-OptLog -Level Warn "Fingerprint differs from the last run, but the $($failedDetectors -join ', ') detector failed this run - treating it as a detection gap, not a hardware change ($($fp.Detail))"
+                }
+                elseif ($fp.Status -eq 'Mismatch') {
                     Write-OptLog -Level Warn "Hardware changed since the last run - $($fp.Detail)"
                     Write-OptLog -Level Detail 'Every gate is being re-evaluated from scratch. Previously-applied vendor-specific tweaks may now target absent hardware - consider -Rollback against the old manifest first.'
                 }

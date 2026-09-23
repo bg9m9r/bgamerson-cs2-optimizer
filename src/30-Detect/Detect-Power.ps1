@@ -5,6 +5,7 @@ function Get-OptPowerSkeleton {
         ActiveSchemeGuid = $null; ActiveSchemeName = $null; Schemes = @()
         IsLaptop = $null; HasBattery = $null; OnAcPower = $null
         SupportsModernStandby = $null; AvailableSleepStates = @()
+        UltimatePerformanceExists = $null
         UltimatePerformanceGuid = $null
     }
 }

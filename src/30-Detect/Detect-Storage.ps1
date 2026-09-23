@@ -3,7 +3,7 @@ function Get-OptStorageSkeleton {
     param()
     return [ordered]@{
         Volumes = @(); Disks = @(); BootBusType = 'Unknown'; BootMediaType = 'Unknown'
-        TrimEnabled = $null; HasHdd = $null; HasNonBootFixedVolume = $null
+        TrimEnabled = $null; HasHdd = $null; HasNonBootFixedVolume = $null; BootFreeGB = $null
     }
 }
 

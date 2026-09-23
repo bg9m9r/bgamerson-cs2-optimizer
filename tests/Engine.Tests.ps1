@@ -645,6 +645,104 @@ Describe 'Section 2.4 - device power management reports what actually happened' 
     }
 }
 
+Describe 'Regressions from the first full Experimental run' {
+
+    It 'reads a REG_BINARY interrupt mask that arrives unrolled as Object[]' {
+        # Get-OptRegValueSafe returns byte[] through the pipeline, which
+        # PowerShell unrolls to Object[]. The [uint64] cast on that took the
+        # whole Network detector down on the first run after 7.5 wrote a mask.
+        Mock Get-OptRegValueSafe {
+            switch ($Name) {
+                'MSISupported'          { return 1 }
+                'DevicePolicy'          { return 4 }
+                'AssignmentSetOverride' { return [object[]]@(3, 0, 0, 0, 0, 0, 0, 0) }
+            }
+        }
+        $info = $null
+        { $info = Get-OptAdapterInterruptInfo -PnpDeviceId 'PCI\VEN_10EC&DEV_8125\X' } | Should -Not -Throw
+        $info = Get-OptAdapterInterruptInfo -PnpDeviceId 'PCI\VEN_10EC&DEV_8125\X'
+        $info.MsiSupported    | Should -Be 1
+        $info.InterruptPolicy | Should -Be 4
+        $info.InterruptMask   | Should -Be '0300000000000000'
+
+        # A DWORD mask still works too.
+        Mock Get-OptRegValueSafe { if ($Name -eq 'AssignmentSetOverride') { return 1 } else { return $null } }
+        (Get-OptAdapterInterruptInfo -PnpDeviceId 'PCI\X').InterruptMask | Should -Be '0100000000000000'
+    }
+
+    It 'every profile field the sources read exists in that detector''s Unknown skeleton' {
+        # When a detector fails, its section is replaced by the skeleton. Under
+        # StrictMode a field the skeleton lacks throws where it is read - the
+        # markdown report crashed on Network.ActiveLinkSpeed exactly this way.
+        $skeletons = @{}
+        foreach ($cmd in (Get-Command -Name 'Get-Opt*Skeleton' -CommandType Function)) {
+            $section = $cmd.Name -replace '^Get-Opt', '' -replace 'Skeleton$', ''
+            $skeletons[$section.ToUpperInvariant()] = @((& $cmd.Name).Keys)
+        }
+
+        $missing = New-Object System.Collections.ArrayList
+        foreach ($file in (Get-Cs2OptSourceFiles)) {
+            $text = Get-Content -LiteralPath $file -Raw
+            foreach ($m in [regex]::Matches($text, '(?:\$p|Profile|\$ProfileData)\.(\w+)\.(\w+)')) {
+                $section = $m.Groups[1].Value.ToUpperInvariant()
+                $field   = $m.Groups[2].Value
+                if (-not $skeletons.ContainsKey($section)) { continue }
+                if ($skeletons[$section] -notcontains $field) {
+                    [void]$missing.Add("$($m.Groups[1].Value).$field (in $(Split-Path -Leaf $file))")
+                }
+            }
+        }
+        @($missing | Sort-Object -Unique) | Should -BeNullOrEmpty -Because 'a failed detector must not crash the reader of a missing field'
+    }
+
+    It 'reports a kernel-refused write as a Manual item when the caller supplies a hint' {
+        $state = New-Cs2OptTestState -Tier 'Aggressive' -PathsRoot (Join-Path $TestDrive "deny-$([guid]::NewGuid())")
+        try {
+            # Deny SetValue to ourselves on the sandboxed key so SetValue throws
+            # the same UnauthorizedAccessException the kernel filter produces.
+            $keyPath = "HKCU:\$($state['SandboxRoot'])\HKLM\SOFTWARE\Policies\Microsoft\Dsh"
+            New-Item -Path $keyPath -Force | Out-Null
+            $acl = Get-Acl -Path $keyPath
+            $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.RegistryAccessRule($me, 'SetValue', 'Deny')))
+            Set-Acl -Path $keyPath -AclObject $acl
+
+            $r = Set-OptRegistryValue -State $state -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -Name 'AllowNewsAndInterests' `
+                -Type DWord -Value 0 -Section '8.7' -Tier 'Aggressive' -Title 'Widgets' -AccessDeniedHint 'use gpedit'
+            $r.Action | Should -Be 'Manual'
+            $d = @($state.Decisions | Where-Object { $_.Id -eq 'S-8.7-AllowNewsAndInterests' })[0]
+            $d.Decision | Should -Be 'Manual'
+            $d.Reason   | Should -Match 'gpedit'
+            @($state.Changes).Count | Should -Be 0
+
+            # Without a hint the same refusal is still a Failed.
+            $r2 = Set-OptRegistryValue -State $state -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -Name 'AllowNewsAndInterests' `
+                -Type DWord -Value 0 -Section '8.7' -Tier 'Aggressive' -Title 'Widgets'
+            $r2.Action | Should -Be 'Failed'
+            # No ACL cleanup: the deny covers SetValue only, so the sandbox
+            # teardown can still delete the key.
+        }
+        finally { Remove-Cs2OptTestState -State $state }
+    }
+
+    It 'does not re-apply the live mouse refresh when no 6.1 value changed' {
+        $state = New-Cs2OptTestState -Tier 'Safe' -PathsRoot (Join-Path $TestDrive "spi-$([guid]::NewGuid())")
+        try {
+            $state.Profile = New-Cs2OptTestProfile @{ 'Input.Mouse' = @{ Speed = 10 } }
+            $state.TargetUser = @{ IsCurrent = $true }
+            $mouse = "HKCU:\$($state['SandboxRoot'])\HKCU\Control Panel\Mouse"
+            New-Item -Path $mouse -Force | Out-Null
+            foreach ($n in 'MouseSpeed', 'MouseThreshold1', 'MouseThreshold2') {
+                New-ItemProperty -Path $mouse -Name $n -Value '0' -PropertyType String -Force | Out-Null
+            }
+            Invoke-OptSection61Mouse -State $state
+            @($state.Changes).Count | Should -Be 0
+            @($state.Decisions | Where-Object { $_.Id -eq 'S-6.1-SPI' })[0].Decision | Should -Be 'NoOp'
+        }
+        finally { Remove-Cs2OptTestState -State $state }
+    }
+}
+
 Describe 'No-unrecorded-mutation invariant' {
 
     It 'records every value it changed, and changes nothing it did not record' {

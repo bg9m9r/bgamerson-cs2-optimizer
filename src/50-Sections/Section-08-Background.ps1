@@ -492,8 +492,15 @@ function Invoke-OptSection87Shell {
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
 
+    # The Dsh policy key can be write-protected by a kernel registry filter
+    # (observed live on a FACEIT machine: Administrators hold full access, no
+    # integrity label, and a plain elevated SetValue is still refused). The
+    # taskbar button is already hidden by TaskbarDa below; the policy itself
+    # then becomes a Group Policy step, not a script failure.
+    $dshHint = 'a security or anti-cheat driver is filtering this key on this machine. The Widgets button is already hidden (TaskbarDa=0). To set the policy itself: gpedit.msc > Computer Configuration > Administrative Templates > Windows Components > Widgets > "Allow widgets" = Disabled.'
+
     $values = @(
-        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh';                                    N = 'AllowNewsAndInterests';           V = 0; T = 'Widgets / News and Interests' }
+        @{ P = 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh';                                    N = 'AllowNewsAndInterests';           V = 0; T = 'Widgets / News and Interests'; H = $dshHint }
         @{ P = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced';        N = 'TaskbarDa';                       V = 0; T = 'Widgets taskbar button' }
         @{ P = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced';        N = 'TaskbarMn';                       V = 0; T = 'Chat/Teams button' }
         @{ P = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Search';                   N = 'SearchboxTaskbarMode';            V = 0; T = 'Taskbar search box' }
@@ -512,8 +519,9 @@ function Invoke-OptSection87Shell {
     )
 
     foreach ($v in $values) {
+        $hint = if ($v.ContainsKey('H')) { [string]$v.H } else { '' }
         Set-OptRegistryValue -State $State -Path $v.P -Name $v.N -Type DWord -Value $v.V `
-            -Section '8.7' -Tier 'Aggressive' -Title $v.T | Out-Null
+            -Section '8.7' -Tier 'Aggressive' -Title $v.T -AccessDeniedHint $hint | Out-Null
     }
 
     # Explorer restart is deliberately NOT performed. Restarting the shell from

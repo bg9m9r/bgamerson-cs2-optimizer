@@ -287,7 +287,14 @@ function Set-OptRegistryValue {
         [string]$Id,
         [string]$Title,
         [switch]$RequiresReboot,
-        [ValidateSet('Immediate', 'PostReboot', 'None')][string]$VerifyMode = 'Immediate'
+        [ValidateSet('Immediate', 'PostReboot', 'None')][string]$VerifyMode = 'Immediate',
+
+        # When given, a persistent access-denied on the write is reported as a
+        # Manual item carrying this text instead of a Failed/Error. For keys a
+        # kernel filter protects even from an elevated administrator - where
+        # "failed" is the wrong word: nothing malfunctioned, the write is simply
+        # not available on this machine.
+        [string]$AccessDeniedHint
     )
 
     if (-not $Id) { $Id = "S-$Section-$Name" }
@@ -386,6 +393,15 @@ function Set-OptRegistryValue {
     }
 
     if ($writeError) {
+        # Two spellings of the same refusal: the kernel filter surfaces as
+        # "Attempted to perform an unauthorized operation", an ACL denial as
+        # "Access to the registry key ... is denied".
+        if ($AccessDeniedHint -and $writeError -match 'unauthorized|denied') {
+            [void](Add-OptDecision -State $State -Id $Id -Section $Section -Decision 'Manual' `
+                -Title $Title -Severity 'Warning' `
+                -Reason "the kernel refused this write even from an elevated administrator - $AccessDeniedHint")
+            return @{ Action = 'Manual'; Reason = $writeError }
+        }
         [void](Add-OptDecision -State $State -Id $Id -Section $Section -Decision 'Failed' `
             -Title $Title -Severity 'Error' `
             -Reason "write failed after retry: $writeError - a re-run usually clears transient contention; a repeat failure means the key is access-protected on this build")

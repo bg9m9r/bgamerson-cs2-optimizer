@@ -3,6 +3,7 @@ function Get-OptNetworkSkeleton {
     param()
     return [ordered]@{
         Adapters = @(); ActiveAdapterName = $null; ActiveIsWireless = $null
+        ActiveIfIndex = $null; ActiveDriverProvider = $null; ActiveLinkSpeed = $null
         MultipleDefaultRoutes = $null; VirtualAheadOfPhysical = $null
         ActiveAdapterPnpDeviceId = $null; ActiveAdapterMsiSupported = $null
         ActiveAdapterInterruptPolicy = $null; IdleWirelessAdapters = @()
@@ -34,8 +35,12 @@ function Get-OptAdapterInterruptInfo {
     if ($null -ne $mask) {
         # REG_BINARY, REG_DWORD and REG_QWORD are all legal here; normalise to a
         # hex string so the profile stays serializable and comparable.
-        $bytes = if ($mask -is [byte[]]) { $mask } else { [System.BitConverter]::GetBytes([uint64]$mask) }
-        $info.InterruptMask = ([System.BitConverter]::ToString([byte[]]$bytes)).Replace('-', '')
+        # A REG_BINARY arrives as Object[], not byte[]: PowerShell unrolls the
+        # byte[] on the way out of Get-OptRegValueSafe. Caught live - the first
+        # run after section 7.5 wrote this value took down the whole detector.
+        $bytes = if ($mask -is [System.Array]) { [byte[]]@($mask | ForEach-Object { [byte]$_ }) }
+                 else { [System.BitConverter]::GetBytes([uint64]$mask) }
+        $info.InterruptMask = ([System.BitConverter]::ToString($bytes)).Replace('-', '')
     }
     return $info
 }

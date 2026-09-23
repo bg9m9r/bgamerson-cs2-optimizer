@@ -44,6 +44,16 @@ function Invoke-OptSection61Mouse {
     if (-not (Test-OptSectionEnabled -State $State -Section '6.1')) { return }
     if (-not (Test-OptTier -State $State -Required 'Safe')) { return }
 
+    # Nothing to push live when nothing was written: the registry IS the
+    # persisted state, so a run that changed no 6.1 value has no refresh to do.
+    # Without this the SPI call showed up as an "applied" item on every run.
+    if (@($State.Changes | Where-Object { $_.Section -eq '6.1' }).Count -eq 0) {
+        [void](Add-OptDecision -State $State -Id 'S-6.1-SPI' -Section '6.1' -Decision 'NoOp' `
+            -Title 'Live mouse setting refresh' `
+            -Reason 'mouse settings were already correct - no live refresh needed')
+        return
+    }
+
     # Apply live so no logoff is needed - but only when the elevated identity IS
     # the interactive user. SystemParametersInfo affects the CALLING session, so
     # running it as a different admin would apply to the wrong session while the
