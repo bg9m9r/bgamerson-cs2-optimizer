@@ -82,7 +82,9 @@ jobs:
           $notes = Get-Content .github\release-notes.md -Raw
           $notes = $notes.Replace('{{ZIP}}', $zip).Replace('{{SHA}}', $sha)
           $notesFile = Join-Path $env:RUNNER_TEMP 'notes.md'
-          Set-Content -LiteralPath $notesFile -Value $notes -Encoding UTF8
+          # Set-Content -Encoding UTF8 under 5.1 writes a BOM, and gh passes it
+          # through into the release body as a stray invisible character.
+          [System.IO.File]::WriteAllText($notesFile, $notes, (New-Object System.Text.UTF8Encoding $false))
 
           "tag=$tag"             | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           "zip=$zip"             | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
