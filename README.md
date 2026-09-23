@@ -4,6 +4,24 @@ A one-shot, idempotent, **detection-driven** Windows 11 optimizer for competitiv
 
 No background daemon. No scheduled task. No resident tweaker process. It runs once, records everything it did, and can undo all of it.
 
+## Get it running
+
+Open **PowerShell** (Start → type `powershell` → Enter; no need to run it as admin), paste this, press Enter:
+
+```powershell
+$d="$env:USERPROFILE\Downloads\bgamerson-cs2-optimizer"; md $d -Force >$null; foreach($f in 'Optimize-CS2.ps1','Run-Optimize-CS2.cmd','Launch-CS2.ps1','Launch-CS2.cmd'){ iwr "https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/latest/download/$f" -OutFile "$d\$f" }; gci $d | Unblock-File; & "$d\Run-Optimize-CS2.cmd" -DryRun
+```
+
+That downloads the latest release into `Downloads\bgamerson-cs2-optimizer`, unblocks the files, and starts a **dry run**: you get one UAC prompt, then a full report of what it *would* change on your machine. **Nothing is modified.**
+
+Happy with the report? Apply the conservative tier, then reboot:
+
+```powershell
+& "$env:USERPROFILE\Downloads\bgamerson-cs2-optimizer\Run-Optimize-CS2.cmd" -Tier Safe
+```
+
+(Or double-click `Run-Optimize-CS2.cmd` in that folder — no arguments means the default `Aggressive` tier.) Undo everything a run did with `Run-Optimize-CS2.cmd -Rollback`. The rest of this page explains what it does and why; [Quick start](#quick-start) has the full apply → reboot → verify sequence.
+
 > **It will not disable Secure Boot, TPM, VBS, IOMMU or Memory Integrity.**
 > On a machine with FACEIT Anti-Cheat installed those are *dependencies*, not optimization targets. Most CS2 optimization guides get this backwards. See [Why VBS stays on](#why-vbs-stays-on).
 
@@ -30,35 +48,19 @@ It is also honest about what it can't do. Sections that aren't safely scriptable
 
 ## Download
 
-**You do not need to build anything.** It ships pre-built as a single file.
+**You do not need to build anything.** It ships pre-built as a single file, and the one-liner at the top of this page is the recommended way to get it. Two alternatives:
 
-### Option 1 — Releases page (easiest)
-
-Open **[Releases](https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/latest)**, download `bgamerson-cs2-optimizer-<version>.zip`, extract it, then **right-click `Run-Optimize-CS2.cmd` → Run as administrator**.
+**Releases page.** Open **[Releases](https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/latest)**, download `bgamerson-cs2-optimizer-<version>.zip`, extract it, then double-click `Run-Optimize-CS2.cmd` (it asks for admin rights itself).
 
 > **If nothing seems to happen**, Windows has flagged the extracted files as internet-sourced. Unblock them once:
 > ```powershell
 > Get-ChildItem "C:\path\to\extracted\folder" | Unblock-File
 > ```
-> That is Mark of the Web, which blocks unsigned downloaded scripts under the default execution policy.
+> That is Mark of the Web, which blocks unsigned downloaded scripts under the default execution policy. The one-liner does this step for you.
 
-### Option 2 — one command
+**Bleeding edge.** The same four files are in [`dist/`](dist/) on `main`; releases are the tested builds, `main` may be ahead of them.
 
-Paste into **PowerShell** to fetch it into `Downloads\bgamerson-cs2-optimizer`:
-
-```powershell
-$dir = "$env:USERPROFILE\Downloads\bgamerson-cs2-optimizer"
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-$base = 'https://raw.githubusercontent.com/bg9m9r/bgamerson-cs2-optimizer/main/dist'
-Invoke-WebRequest "$base/Optimize-CS2.ps1"     -OutFile "$dir\Optimize-CS2.ps1"
-Invoke-WebRequest "$base/Run-Optimize-CS2.cmd" -OutFile "$dir\Run-Optimize-CS2.cmd"
-Get-ChildItem $dir | Unblock-File
-explorer $dir
-```
-
-Then right-click `Run-Optimize-CS2.cmd` → **Run as administrator**.
-
-*Deliberately not offered as an `irm … | iex` one-liner.* Piping a remote script straight into your shell is a bad habit in general, and it does not work here anyway — the script relies on `#Requires -RunAsAdministrator`, a `param()` block and command-line switches, none of which survive that pattern. Download it, read it, then run it.
+The one-liner downloads real files and then runs them — it is *deliberately not* an `irm … | iex` pipe. Piping a remote script straight into your shell is a bad habit in general, and it does not work here anyway: the script relies on a `param()` block, command-line switches and its own UAC self-elevation, none of which survive that pattern. The files stay in `Downloads\bgamerson-cs2-optimizer` where you can read them.
 
 ---
 
