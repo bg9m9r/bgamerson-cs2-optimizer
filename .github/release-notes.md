@@ -1,8 +1,12 @@
 ## Download
 
-Grab **`{{ZIP}}`** below, extract it, then **right-click `Run-Optimize-CS2.cmd` and choose *Run as administrator***.
+Easiest: open **PowerShell**, paste this, press Enter. It downloads this release into `Downloads\bgamerson-cs2-optimizer`, unblocks it, and starts a dry run (one UAC prompt; nothing is modified):
 
-If nothing seems to happen, Windows flagged the extracted files as internet-sourced. Unblock them once:
+```powershell
+$d="$env:USERPROFILE\Downloads\bgamerson-cs2-optimizer"; md $d -Force >$null; foreach($f in 'Optimize-CS2.ps1','Run-Optimize-CS2.cmd','Launch-CS2.ps1','Launch-CS2.cmd'){ iwr "https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/latest/download/$f" -OutFile "$d\$f" }; gci $d | Unblock-File; & "$d\Run-Optimize-CS2.cmd" -DryRun
+```
+
+Or grab **`{{ZIP}}`** below, extract it, and double-click `Run-Optimize-CS2.cmd` — it asks for admin rights itself. If nothing seems to happen, Windows flagged the extracted files as internet-sourced. Unblock them once:
 
 ```powershell
 Get-ChildItem "C:\path\to\extracted\folder" | Unblock-File
@@ -26,7 +30,7 @@ Reboot, then `Run-Optimize-CS2.cmd -VerifyOnly` to resolve the checks that only 
 
 ## Notes
 
-- Requires **Windows PowerShell 5.1** and an elevated prompt. The script refuses to run under PowerShell 7 — see the README for why.
+- Requires **Windows PowerShell 5.1**; it asks for admin rights itself via UAC. The script refuses to run under PowerShell 7 — see the README for why.
 - It will **not** disable Secure Boot, TPM, VBS, IOMMU or Memory Integrity. On a machine with FACEIT Anti-Cheat those are dependencies, not optimization targets.
 - Every tweak is gated on detected hardware. Anything whose preconditions are not met is skipped and logged with the reason, never applied blindly.
 - Every change is recorded to a manifest and is reversible with `-Rollback`.
