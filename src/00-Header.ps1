@@ -69,6 +69,12 @@
     nothing about the machine, and continues silently when offline. -Rollback
     and -ProfileFrom never check.
 
+.PARAMETER NoOpenReport
+    Does not open the markdown report when the run finishes. By default it
+    opens in whatever handles .md files, or Notepad when nothing does.
+    Rollback, -VerifyOnly and -CaptureProfile produce no report and never
+    open one.
+
 .EXAMPLE
     .\Optimize-CS2.ps1 -DryRun
     .\Optimize-CS2.ps1 -Tier Safe
@@ -116,7 +122,11 @@ param(
     # exit 2 instead. For CI and scripted callers that must never pop a prompt.
     [switch]$NoElevate,
 
-    [switch]$NoUpdateCheck
+    [switch]$NoUpdateCheck,
+
+    # The markdown report opens in the default .md viewer (Notepad if none)
+    # when a run finishes. This keeps it on disk only.
+    [switch]$NoOpenReport
 )
 
 # StrictMode 3.0 rather than Latest: 3.0 still catches uninitialised variables

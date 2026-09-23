@@ -159,6 +159,7 @@ function Invoke-OptMain {
         Write-OptManifest -State $State -Final
         Write-OptMarkdownReport -State $State
         Write-OptRunSummary -State $State
+        [void](Open-OptReport -State $State)
     }
     finally {
         # The restore-point frequency override MUST be undone, or the machine
@@ -288,6 +289,7 @@ $OptParameters = @{
     ExcludeSections       = $ExcludeSections
     AllowNetworkRestart   = [bool]$AllowNetworkRestart
     NoUpdateCheck         = [bool]$NoUpdateCheck
+    NoOpenReport          = [bool]$NoOpenReport
 }
 
 # -ProfileFrom means the hardware was not probed, so mutating would be reckless.

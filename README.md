@@ -77,7 +77,7 @@ Always start here. It changes nothing and prints exactly what it would do:
 Run-Optimize-CS2.cmd -DryRun
 ```
 
-Read the report, then apply the lowest tier:
+When a run finishes, the markdown report opens by itself in whatever handles `.md` files (Notepad if nothing does — Windows 11 Notepad renders Markdown). `-NoOpenReport` keeps it on disk only. Read the report, then apply the lowest tier:
 
 ```
 Run-Optimize-CS2.cmd -Tier Safe
@@ -157,6 +157,7 @@ Inbox-app removal (8.8) and OneDrive removal (8.9) are **report-only** in every 
 | `-BitLockerAcknowledged` | Permit `bcdedit` changes while BitLocker is on — and only if a recovery-password protector is confirmed. Read the warning first. |
 | `-NoElevate` | When unelevated, print a message and exit 2 instead of showing a UAC prompt. |
 | `-NoUpdateCheck` | Skip the start-up release check (see [Quick start](#quick-start)). |
+| `-NoOpenReport` | Don't open the markdown report when the run finishes. |
 | `-RemoveApps`, `-RemoveOneDrive`, `-NoReboot` | Accepted for compatibility with the original spec; **no effect in this build.** Sections 8.8 and 8.9 are report-only, and the script never reboots on its own. |
 
 Exit codes: `0` the run completed (individual tweaks that failed are reported as findings, not as a non-zero exit), `1` the run stopped on an unexpected error or was launched under PowerShell 7 (the manifest is still salvaged so `-Rollback` works), `2` refused by a safety gate — a virtual machine, or unelevated with `-NoElevate`.

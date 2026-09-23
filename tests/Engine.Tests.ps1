@@ -533,6 +533,42 @@ Describe 'Release update check' {
     }
 }
 
+Describe 'Report auto-open' {
+    # The launcher is injected: nothing here opens a window.
+
+    BeforeEach {
+        $script:state = New-Cs2OptTestState -Tier 'Safe' -PathsRoot (Join-Path $TestDrive "rep-$([guid]::NewGuid())")
+        Set-Content -LiteralPath $script:state.Paths.Report -Value '# report' -Encoding UTF8
+        $script:opened = New-Object System.Collections.ArrayList
+        $script:launcher = { param($path) [void]$script:opened.Add($path) }
+    }
+    AfterEach { Remove-Cs2OptTestState -State $script:state }
+
+    It 'opens the report that the run just wrote' {
+        $r = Open-OptReport -State $script:state -Launcher $script:launcher
+        $r | Should -BeTrue
+        @($script:opened) | Should -Be @($script:state.Paths.Report)
+    }
+
+    It 'stays closed with -NoOpenReport' {
+        $script:state.Parameters['NoOpenReport'] = $true
+        Open-OptReport -State $script:state -Launcher $script:launcher | Should -BeFalse
+        @($script:opened).Count | Should -Be 0
+    }
+
+    It 'does nothing when no report was written' {
+        Remove-Item -LiteralPath $script:state.Paths.Report -Force
+        Open-OptReport -State $script:state -Launcher $script:launcher | Should -BeFalse
+        @($script:opened).Count | Should -Be 0
+    }
+
+    It 'never lets a launcher failure surface as an error' {
+        $boom = { param($path) throw 'no association' }
+        { Open-OptReport -State $script:state -Launcher $boom } | Should -Not -Throw
+        Open-OptReport -State $script:state -Launcher $boom | Should -BeFalse
+    }
+}
+
 Describe 'No-unrecorded-mutation invariant' {
 
     It 'records every value it changed, and changes nothing it did not record' {

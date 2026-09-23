@@ -345,3 +345,41 @@ function Write-OptMarkdownReport {
         Write-OptLog -Level Warn "Could not write the report: $($_.Exception.Message)"
     }
 }
+
+function Open-OptReport {
+    <#
+        Opens the finished markdown report in whatever the user reads .md
+        files with, so the run ends on the document rather than on a console
+        path to copy. Falls back to Notepad when nothing is registered for
+        .md (Windows 11 Notepad renders Markdown).
+
+        Never fatal, never in a non-interactive session, and skipped with
+        -NoOpenReport. The launcher is injectable so tests can prove the
+        decision without a window ever opening.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$State,
+        [scriptblock]$Launcher = {
+            param($path)
+            try { Start-Process -FilePath $path -ErrorAction Stop }
+            catch { Start-Process -FilePath 'notepad.exe' -ArgumentList ('"{0}"' -f $path) -ErrorAction Stop }
+        }
+    )
+
+    if ($State.Parameters['NoOpenReport']) { return $false }
+    if (-not $State.Paths -or -not $State.Paths.Report) { return $false }
+    if (-not (Test-Path -LiteralPath $State.Paths.Report)) { return $false }
+    if (-not [Environment]::UserInteractive) { return $false }
+
+    try {
+        & $Launcher $State.Paths.Report
+        Write-OptLog -Level Info "Opening the report: $($State.Paths.Report)"
+        return $true
+    }
+    catch {
+        Write-OptLog -Level Detail "Could not open the report automatically: $($_.Exception.Message)"
+        return $false
+    }
+}
