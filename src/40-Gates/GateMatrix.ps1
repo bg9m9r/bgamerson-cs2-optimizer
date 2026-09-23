@@ -93,6 +93,36 @@ function Get-OptGateMatrix {
             Reason = 'X3D part - idle-blocking raises the thermal floor and reduces sustained boost residency (IDLEDISABLE stays 0 on every path anyway)'
         }
         @{
+            # Dual-CCD X3D parts (7950X3D, 9950X3D) only keep games on the
+            # cache die when the AMD 3D V-Cache Performance Optimizer driver is
+            # loaded. Without it the second die is scheduled like any other and
+            # the result is the stutter that fills the AMD forums. Single-CCD
+            # X3D parts have nothing to steer, so the row stays silent there.
+            Id = 'G-AMD-X3D-DUALCCD'; Section = '2.2'; Title = 'AMD 3D V-Cache driver'
+            When = { param($p, $o)
+                if (-not (ConvertTo-OptBool $p.CPU.HasVCache)) { return $false }
+                if ($null -eq $p.CPU.CcdCount) { return $null }
+                if ([int]$p.CPU.CcdCount -lt 2) { return $false }
+                $present = ConvertTo-OptBool $p.CPU.VCacheDriverPresent
+                if ($null -eq $present) { return $null }
+                return (-not $present)
+            }
+            OnIndeterminate = 'Allow'
+            Kind = 'Finding'; Severity = 'Critical'
+            Reason = 'dual-CCD X3D processor without the AMD 3D V-Cache Performance Optimizer driver (amd3dvcache) - games get scheduled onto the non-cache die and stutter. Install the AMD chipset driver package (7.11.26.2142 or later is the Windows 11 25H2 release), then reboot.'
+        }
+        @{
+            Id = 'G-AMD-X3D-GAMEBAR'; Section = '3.1'; Title = 'Game Bar on dual-CCD X3D'
+            When = { param($p, $o)
+                if (-not (ConvertTo-OptBool $p.CPU.HasVCache)) { return $false }
+                if ($null -eq $p.CPU.CcdCount) { return $null }
+                return ([int]$p.CPU.CcdCount -ge 2)
+            }
+            OnIndeterminate = 'Allow'
+            Kind = 'Note'; Severity = 'Warning'
+            Reason = 'dual-CCD X3D processor - the V-Cache driver keys off Xbox Game Bar''s game detection, so Game Mode must stay ON (section 3.1 enables it) and Game Bar must stay INSTALLED (section 8.8 never removes it). Debloat scripts that strip Game Bar cost real frames here.'
+        }
+        @{
             Id = 'G-6.4-AFFINITY'; Section = '6.4'; Title = 'CPU affinity pinning'
             When = { param($p, $o) $true }
             OnIndeterminate = 'Block'
@@ -269,9 +299,46 @@ function Get-OptGateMatrix {
             Id = 'G-7.1-WIRELESS'; Section = '7.1'; Title = 'NIC advanced properties'
             When = { param($p, $o) ConvertTo-OptBool $p.Network.ActiveIsWireless }
             OnIndeterminate = 'Block'
-            Kind = 'Skip'; Effect = @{ Skip = @('7.1') }
+            Kind = 'Skip'; Effect = @{ Skip = @('7.1', '7.5') }
             Severity = 'Warning'
             Reason = 'the active adapter is wireless - power-management keywords behave differently on Wi-Fi and changing them can cause disconnects. Use wired for FACEIT.'
+        }
+        @{
+            # netsh only grew the 'uro' parameter with UDP receive offload in
+            # 24H2 (build 26100). On older builds the command fails with usage
+            # text, so the section is skipped rather than reported as a failure.
+            Id = 'G-7.4-BUILD'; Section = '7.4'; Title = 'UDP receive offload'
+            When = { param($p, $o)
+                if ($null -eq $p.OS.BuildNumber) { return $null }
+                return ([int]$p.OS.BuildNumber -lt 26100)
+            }
+            OnIndeterminate = 'Block'
+            Kind = 'Skip'; Effect = @{ Skip = @('7.4') }
+            Reason = 'pre-24H2 build - UDP receive segment coalescing does not exist here, nothing to disable'
+        }
+        @{
+            # Line-based interrupts are shared between devices; pinning one
+            # device's line pins its neighbours too. Only MSI/MSI-X devices
+            # get an affinity policy.
+            Id = 'G-7.5-MSI'; Section = '7.5'; Title = 'NIC interrupt affinity'
+            When = { param($p, $o)
+                if ($null -eq $p.Network.ActiveAdapterMsiSupported) { return $null }
+                return ([int]$p.Network.ActiveAdapterMsiSupported -ne 1)
+            }
+            OnIndeterminate = 'Block'
+            Kind = 'Skip'; Effect = @{ Skip = @('7.5') }
+            Reason = 'the active adapter does not use message-signalled interrupts - a line-based IRQ is shared with other devices and must not be pinned'
+        }
+        @{
+            Id = 'G-7.5-CORES'; Section = '7.5'; Title = 'NIC interrupt affinity'
+            When = { param($p, $o)
+                if ($null -eq $p.CPU.LogicalCores) { return $null }
+                $n = [int]$p.CPU.LogicalCores
+                return ($n -lt 8 -or $n -gt 64)
+            }
+            OnIndeterminate = 'Block'
+            Kind = 'Skip'; Effect = @{ Skip = @('7.5') }
+            Reason = 'fewer than 8 logical cores (core 0 is not spare) or more than one processor group (a single affinity mask cannot address it)'
         }
         @{
             Id = 'G-7.1-INBOX'; Section = '7.1'; Title = 'NIC advanced properties'

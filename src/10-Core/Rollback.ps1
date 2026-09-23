@@ -120,6 +120,8 @@ function Get-OptRollbackDescription {
         'MMAgent'             { return "restore MMAgent $($Change.Target.Field) to $($Change.OldValue)" }
         'PowerCfgActive'      { return "re-activate power scheme $($Change.OldValue)" }
         'NetAdapterProperty'  { return "restore $($Change.Target.AdapterName) $($Change.Target.Keyword) to $($Change.OldValue)" }
+        'NetshTcpGlobal'      { return "restore netsh int tcp $($Change.Target.Setting) to $($Change.OldValue)" }
+        'NetshUdpGlobal'      { return "restore netsh int udp $($Change.Target.Setting) to $($Change.OldValue)" }
         'DefenderExclusion'   { return "remove Defender exclusion $($Change.NewValue)" }
         'FsutilBehavior'      { return "restore fsutil $($Change.Target.Setting) to $($Change.OldValue)" }
         'DisplayMode'         { return "restore display $($Change.Target.Device) to $($Change.OldValue) Hz" }
@@ -286,6 +288,14 @@ function Invoke-OptRollbackEntry {
                  -ArgumentList @('int', 'tcp', 'set', 'global', "$([string]$t.Setting)=$([string]$Change.OldValue)")
             if (-not $r.Success) { return @{ Result = 'FAILED'; Detail = "netsh restore failed: $($r.StdErr)" } }
             return @{ Result = 'RESTORED'; Detail = "restored netsh $($t.Setting) to $($Change.OldValue)" }
+        }
+
+        'NetshUdpGlobal' {
+            $t = $Change.Target
+            $r = Invoke-OptNativeCommand -State $State -FilePath 'netsh.exe' `
+                 -ArgumentList @('int', 'udp', 'set', 'global', "$([string]$t.Setting)=$([string]$Change.OldValue)")
+            if (-not $r.Success) { return @{ Result = 'FAILED'; Detail = "netsh restore failed: $($r.StdErr)" } }
+            return @{ Result = 'RESTORED'; Detail = "restored netsh udp $($t.Setting) to $($Change.OldValue)" }
         }
 
         'FsutilBehavior' {

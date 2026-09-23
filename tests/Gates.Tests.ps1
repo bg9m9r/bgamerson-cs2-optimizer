@@ -139,6 +139,60 @@ Describe 'Gate matrix - hardware conditions' {
         $p = New-Cs2OptTestProfile @{ 'Network.ActiveIsWireless' = $true }
         $r = Resolve-OptGates -ProfileData $p -Tier 'Aggressive'
         $r.BlockedSections | Should -Contain '7.1'
+        # Interrupt pinning follows the same wired-only rule.
+        $r.BlockedSections | Should -Contain '7.5'
+    }
+
+    It 'skips UDP receive offload on a pre-24H2 build, and when the build is unknown' {
+        $p = New-Cs2OptTestProfile @{ 'OS.BuildNumber' = 22631 }
+        (Resolve-OptGates -ProfileData $p -Tier 'Aggressive').BlockedSections | Should -Contain '7.4'
+
+        $p = New-Cs2OptTestProfile @{ 'OS.BuildNumber' = $null }
+        (Resolve-OptGates -ProfileData $p -Tier 'Aggressive').BlockedSections | Should -Contain '7.4'
+
+        $p = New-Cs2OptTestProfile @{ 'OS.BuildNumber' = 26100 }
+        (Resolve-OptGates -ProfileData $p -Tier 'Aggressive').BlockedSections | Should -Not -Contain '7.4'
+    }
+
+    It 'pins NIC interrupts only on MSI-capable adapters with 8-64 logical CPUs' {
+        $base = @{ 'Network.ActiveIsWireless' = $false; 'Network.ActiveAdapterMsiSupported' = 1; 'CPU.LogicalCores' = 8 }
+        $p = New-Cs2OptTestProfile $base
+        (Resolve-OptGates -ProfileData $p -Tier 'Experimental').BlockedSections | Should -Not -Contain '7.5'
+
+        foreach ($case in @(
+            @{ 'Network.ActiveAdapterMsiSupported' = 0 }      # line-based IRQ
+            @{ 'Network.ActiveAdapterMsiSupported' = $null }  # unknown -> blocked
+            @{ 'CPU.LogicalCores' = 6 }
+            @{ 'CPU.LogicalCores' = 128 }
+            @{ 'CPU.LogicalCores' = $null }
+        )) {
+            $o = $base.Clone(); foreach ($k in $case.Keys) { $o[$k] = $case[$k] }
+            $p = New-Cs2OptTestProfile $o
+            (Resolve-OptGates -ProfileData $p -Tier 'Experimental').BlockedSections |
+                Should -Contain '7.5' -Because ("case " + (($case.Keys | ForEach-Object { "$_=$($case[$_])" }) -join ','))
+        }
+    }
+
+    It 'raises a critical finding on a dual-CCD X3D part without the V-Cache driver' {
+        $p = New-Cs2OptTestProfile @{ 'CPU.HasVCache' = $true; 'CPU.CcdCount' = 2; 'CPU.VCacheDriverPresent' = $false }
+        $d = Get-Cs2OptGateDecision -ProfileData $p -GateId 'G-AMD-X3D-DUALCCD'
+        $d.Decision | Should -Be 'Finding'
+        $d.Severity | Should -Be 'Critical'
+        # And the Game Bar note fires alongside it.
+        (Get-Cs2OptGateDecision -ProfileData $p -GateId 'G-AMD-X3D-GAMEBAR').Decision | Should -Be 'NoOp'
+    }
+
+    It 'stays silent about the V-Cache driver on single-CCD X3D parts, non-X3D parts, and when present' {
+        foreach ($case in @(
+            @{ 'CPU.HasVCache' = $true;  'CPU.CcdCount' = 1; 'CPU.VCacheDriverPresent' = $false }   # the reference 9850X3D
+            @{ 'CPU.HasVCache' = $false; 'CPU.CcdCount' = 2; 'CPU.VCacheDriverPresent' = $false }   # 9950X, no cache die
+            @{ 'CPU.HasVCache' = $true;  'CPU.CcdCount' = 2; 'CPU.VCacheDriverPresent' = $true }    # driver installed
+            @{ 'CPU.HasVCache' = $true;  'CPU.CcdCount' = 2; 'CPU.VCacheDriverPresent' = $null }    # unknown: Allow policy
+        )) {
+            $p = New-Cs2OptTestProfile $case
+            (Get-Cs2OptGateDecision -ProfileData $p -GateId 'G-AMD-X3D-DUALCCD').Decision |
+                Should -Be 'On' -Because ("case " + (($case.Keys | ForEach-Object { "$_=$($case[$_])" }) -join ','))
+        }
     }
 
     It 'flags an inbox NIC driver as a finding rather than silently failing' {

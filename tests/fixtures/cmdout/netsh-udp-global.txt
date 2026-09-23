@@ -1,0 +1,7 @@
+Querying active state...
+
+UDP Global Parameters
+----------------------------------------------
+Receive Offload State               : enabled
+Send Offload State                  : enabled
+

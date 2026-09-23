@@ -234,8 +234,10 @@ function Invoke-OptSection84Startup {
                 $key = $base.OpenSubKey($sub)
                 if (-not $key) { continue }
                 foreach ($name in $key.GetValueNames()) {
+                    $cmd = [string]$key.GetValue($name)
                     [void]$entries.Add([pscustomobject]@{
-                        Source = "$hive\$sub"; Name = $name; Command = [string]$key.GetValue($name)
+                        Source = "$hive\$sub"; Name = $name; Command = $cmd
+                        Note = Get-OptStartupEntryNote -Name $name -Command $cmd
                     })
                 }
             }
@@ -250,15 +252,60 @@ function Invoke-OptSection84Startup {
     )) {
         if (-not $folder -or -not (Test-Path -LiteralPath $folder)) { continue }
         foreach ($f in (Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue)) {
-            [void]$entries.Add([pscustomobject]@{ Source = 'Startup folder'; Name = $f.Name; Command = $f.FullName })
+            [void]$entries.Add([pscustomobject]@{
+                Source = 'Startup folder'; Name = $f.Name; Command = $f.FullName
+                Note = Get-OptStartupEntryNote -Name $f.Name -Command $f.FullName
+            })
         }
     }
 
     $State['StartupInventory'] = @($entries)
 
+    $flagged = @($entries | Where-Object { $_.Note }).Count
+    $flagNote = if ($flagged -gt 0) { " $flagged of them are overlay / RGB / peripheral suites - the usual DPC-spike offenders; see the Note column." } else { '' }
+
     [void](Add-OptDecision -State $State -Id 'S-8.4' -Section '8.4' -Decision 'Manual' `
         -Title 'Startup inventory' `
-        -Reason "$($entries.Count) startup entries found - listed in the report. Nothing was disabled automatically: the script cannot tell an anti-cheat component or peripheral driver from bloat.")
+        -Reason "$($entries.Count) startup entries found - listed in the report.$flagNote Nothing was disabled automatically: the script cannot tell an anti-cheat component or peripheral driver from bloat.")
+}
+
+function Get-OptStartupEntryNote {
+    <#
+        Annotates a startup entry that belongs to a known overlay, RGB or
+        peripheral suite. These are what LatencyMon keeps naming when a
+        high-fps machine still hitches; the fix is the suite's own settings, so
+        this only points, it never disables.
+    #>
+    [CmdletBinding()][OutputType([string])]
+    param(
+        [AllowNull()][AllowEmptyString()][string]$Name,
+        [AllowNull()][AllowEmptyString()][string]$Command
+    )
+
+    $hay = "$Name $Command"
+    $overlay = 'overlay - disable its in-game overlay and hardware acceleration, or close it before playing'
+    $rgb     = 'RGB / peripheral suite - set the device to onboard-memory mode and close the suite; it is a top DPC-spike source'
+    $cap     = 'capture / overlay - close it before playing; overlays inject into the frame pipeline'
+
+    $rules = @(
+        @{ P = 'Discord';                              N = $overlay }
+        @{ P = 'iCUE|Corsair';                         N = $rgb }
+        @{ P = 'Razer|Synapse';                        N = $rgb }
+        @{ P = 'Armoury\s?Crate|ArmouryCrate|AuraService|Aura Sync|LightingService'; N = $rgb }
+        @{ P = 'MSI Center|MSI_Center|MysticLight';    N = $rgb }
+        @{ P = 'LGHUB|G HUB|lghub';                    N = $rgb }
+        @{ P = 'SteelSeries|\bGG\.exe';                N = $rgb }
+        @{ P = 'NZXT|\bCAM\.exe';                      N = $rgb }
+        @{ P = 'SignalRGB|OpenRGB';                    N = $rgb }
+        @{ P = 'Wallpaper Engine|wallpaper32|wallpaper64'; N = 'animated wallpaper - renders continuously; pause it while gaming' }
+        @{ P = 'MSIAfterburner|RTSS|RivaTuner';        N = $cap }
+        @{ P = 'NVIDIA App|GeForce Experience|NvBackend|ShadowPlay'; N = $cap }
+        @{ P = 'Medal\b|Outplayed|Overwolf|XSplit|\bobs(64|32)?\.exe'; N = $cap }
+    )
+    foreach ($r in $rules) {
+        if ($hay -match $r.P) { return [string]$r.N }
+    }
+    return ''
 }
 
 function Invoke-OptSection85Ai {

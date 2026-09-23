@@ -13,9 +13,52 @@ function Invoke-OptSection07 {
 
     Write-OptLog -Level Header 'SECTION 7 - Network'
 
+    Invoke-OptSection7IdleWireless -State $State
     Invoke-OptSection71Nic   -State $State
     Invoke-OptSection72Tcp   -State $State
     Invoke-OptSection73Nagle -State $State
+    Invoke-OptSection74Uro   -State $State
+    Invoke-OptSection75InterruptAffinity -State $State
+}
+
+function Get-OptNetshGlobalValue {
+    <#
+        Pulls one 'Label : value' pair out of `netsh int <proto> show global`
+        output. Shared by 7.2 (tcp) and 7.4 (udp) so both parse identically and
+        both are testable against captured fixtures.
+    #>
+    [CmdletBinding()][OutputType([string])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Lines,
+        [Parameter(Mandatory)][string]$Label
+    )
+    foreach ($line in $Lines) {
+        if ($line -match "^\s*$([regex]::Escape($Label))\s*:\s*(\S+)") { return $Matches[1] }
+    }
+    return $null
+}
+
+function Invoke-OptSection7IdleWireless {
+    <#
+        Report-only. An enabled-but-unconnected Wi-Fi radio keeps scanning for
+        networks while the wired NIC carries the game, and wlansvc's periodic
+        scans are a well-documented source of DPC latency spikes. Not automated
+        on purpose: if the cable ever drops, an adapter this script disabled is
+        the fallback the user would reach for, and they would not know why it
+        is gone.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
+
+    if (-not (Test-OptSectionEnabled -State $State -Section '7')) { return }
+
+    $idle = @($State.Profile.Network.IdleWirelessAdapters)
+    if ($idle.Count -eq 0) { return }
+
+    $names = $idle -join "', '"
+    [void](Add-OptDecision -State $State -Id 'S-7-WIFI-IDLE' -Section '7' -Decision 'Manual' `
+        -Title 'Idle Wi-Fi adapter while wired' -Severity 'Warning' `
+        -Reason "Wi-Fi adapter '$names' is enabled but not connected while Ethernet carries the game traffic. Its background network scans are a known periodic DPC-spike source. Disable it in Device Manager, or run: Disable-NetAdapter -Name '$($idle[0])' (undo with Enable-NetAdapter). Left alone by this script so a dropped cable still has a fallback.")
 }
 
 function Get-OptNicIntentValue {
@@ -239,13 +282,7 @@ function Invoke-OptSection72Tcp {
     $show = Invoke-OptNativeCommand -State $State -FilePath 'netsh.exe' -ArgumentList @('int', 'tcp', 'show', 'global') -ReadOnly
     $lines = Get-OptCommandLines -Text $show.StdOut
 
-    $currentOf = {
-        param($label)
-        foreach ($line in $lines) {
-            if ($line -match "^\s*$label\s*:\s*(\S+)") { return $Matches[1] }
-        }
-        return $null
-    }
+    $currentOf = { param($label) Get-OptNetshGlobalValue -Lines $lines -Label $label }
 
     $settings = @(
         # autotuninglevel=normal is DELIBERATE. Many optimization scripts set it
@@ -337,4 +374,134 @@ function Invoke-OptSection73Nagle {
     [void](Add-OptDecision -State $State -Id 'S-7.3-NOTE' -Section '7.3' -Decision 'NoOp' `
         -Title 'Nagle expectations' `
         -Reason "CS2's game traffic is UDP and Nagle affects TCP only. This influences the Steam client and matchmaking sockets, not in-game netcode. Included because it is harmless and on every list - do not expect a tick-rate improvement.")
+}
+
+function Invoke-OptSection74Uro {
+    <#
+        UDP Receive Segment Coalescing Offload (URO), new in Windows 11 24H2.
+        The stack (or the NIC) batches consecutive same-flow UDP datagrams into
+        one indication, trading per-packet delivery for lower CPU cost on
+        high-bandwidth flows. CS2 traffic is entirely UDP, and a game socket
+        wants every datagram the moment it lands. Software URO is active even
+        when the NIC has no hardware support (MS Learn), so the setting is
+        meaningful on every 24H2+ machine.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
+
+    if (-not (Test-OptSectionEnabled -State $State -Section '7.4')) {
+        [void](Add-OptDecision -State $State -Id 'S-7.4' -Section '7.4' -Decision 'Off' `
+            -Title 'UDP receive offload' -Reason 'section gated off')
+        return
+    }
+    if (-not (Test-OptTier -State $State -Required 'Aggressive')) { return }
+
+    $show = Invoke-OptNativeCommand -State $State -FilePath 'netsh.exe' -ArgumentList @('int', 'udp', 'show', 'global') -ReadOnly
+    $current = Get-OptNetshGlobalValue -Lines (Get-OptCommandLines -Text $show.StdOut) -Label 'Receive Offload State'
+    $title = 'UDP receive offload (URO) off'
+
+    if (-not $current) {
+        [void](Add-OptDecision -State $State -Id 'S-7.4-uro' -Section '7.4' -Decision 'NoOp' `
+            -Title $title -Severity 'Warning' -Reason 'could not read the UDP global parameters - skipped, not failed')
+        return
+    }
+    if ($current -eq 'disabled') {
+        [void](Add-OptDecision -State $State -Id 'S-7.4-uro' -Section '7.4' -Decision 'NoOp' `
+            -Title $title -Reason 'already disabled')
+        return
+    }
+
+    $r = Invoke-OptNativeCommand -State $State -FilePath 'netsh.exe' `
+         -ArgumentList @('int', 'udp', 'set', 'global', 'uro=disabled') -Purpose $title
+
+    $change = New-OptChangeRecord -State $State -Type 'NetshUdpGlobal' -Section '7.4' -Tier 'Aggressive' `
+        -Path 'netsh int udp' -Name 'uro' -Target @{ Setting = 'uro' } `
+        -OldValue $current -NewValue 'disabled' -VerifyMode 'None'
+
+    if ($State.DryRun) {
+        [void]$State.Changes.Add($change)
+        [void](Add-OptDecision -State $State -Id 'S-7.4-uro' -Section '7.4' -Decision 'Applied' `
+            -Title $title -Reason "would set to disabled (currently $current)")
+    }
+    elseif (-not $r.Success) {
+        [void](Add-OptDecision -State $State -Id 'S-7.4-uro' -Section '7.4' -Decision 'Failed' `
+            -Title $title -Severity 'Warning' -Reason ([string]$r.StdErr).Trim())
+        return
+    }
+    else {
+        [void](Add-OptChange -State $State -Change $change)
+        [void](Add-OptDecision -State $State -Id 'S-7.4-uro' -Section '7.4' -Decision 'Applied' `
+            -Title $title -Reason "set to disabled (was $current)")
+    }
+
+    [void](Add-OptDecision -State $State -Id 'S-7.4-NOTE' -Section '7.4' -Decision 'NoOp' `
+        -Title 'URO expectations' `
+        -Reason 'URO exists for high-bandwidth flows and only merges equal-length datagrams from one flow, which CS2''s variable-size packets rarely satisfy. Expect zero to a small jitter reduction, not a frame-rate change. Harmless, and -Rollback restores it.')
+}
+
+function Invoke-OptSection75InterruptAffinity {
+    <#
+        Pins the active NIC's interrupts (and therefore its NDIS DPCs) to
+        physical core 0 - the core Launch-CS2.cmd keeps the game OFF. The two
+        are designed as a pair: the game leaves core 0, the network stack moves
+        onto it, and neither pre-empts the other.
+
+        Mechanism is the documented Interrupt Management\Affinity Policy
+        registry node (IrqPolicySpecifiedProcessors = 4 with a KAFFINITY mask),
+        the same thing the Microsoft Interrupt Affinity Tool writes. Read at
+        device start, hence the reboot.
+
+        Gated to MSI-capable adapters (a line-based IRQ is shared) and to 8-64
+        logical CPUs. A policy someone else already configured is left alone.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$State)
+
+    if (-not (Test-OptSectionEnabled -State $State -Section '7.5')) {
+        [void](Add-OptDecision -State $State -Id 'S-7.5' -Section '7.5' -Decision 'Off' `
+            -Title 'NIC interrupt affinity' -Reason 'section gated off')
+        return
+    }
+    if (-not (Test-OptTier -State $State -Required 'Experimental')) {
+        [void](Add-OptDecision -State $State -Id 'S-7.5' -Section '7.5' -Decision 'Off' `
+            -Title 'NIC interrupt affinity' -Reason 'requires tier Experimental')
+        return
+    }
+
+    $p = $State.Profile
+    $adapter = $p.Network.Adapters | Where-Object { $_.Name -eq $p.Network.ActiveAdapterName } | Select-Object -First 1
+    if (-not $adapter -or -not $adapter.PnpDeviceId) {
+        [void](Add-OptDecision -State $State -Id 'S-7.5' -Section '7.5' -Decision 'Off' `
+            -Title 'NIC interrupt affinity' -Reason 'could not resolve the PnP instance of the active adapter')
+        return
+    }
+
+    # Physical core 0 = logical 0, or the 0+1 pair with SMT. Same rule as the
+    # launcher, so the two masks are complementary by construction.
+    $smt = ConvertTo-OptBool $p.CPU.SmtEnabled
+    $mask = [uint64]1
+    if ($smt) { $mask = [uint64]3 }
+    $maskBytes = [byte[]][System.BitConverter]::GetBytes($mask)
+    $maskHex = ([System.BitConverter]::ToString($maskBytes)).Replace('-', '')
+
+    $existingPolicy = $adapter.InterruptPolicy
+    if ($null -ne $existingPolicy -and [int]$existingPolicy -ne 0 -and
+        -not ([int]$existingPolicy -eq 4 -and [string]$adapter.InterruptMask -eq $maskHex)) {
+        [void](Add-OptDecision -State $State -Id 'S-7.5' -Section '7.5' -Decision 'Manual' `
+            -Title 'NIC interrupt affinity' -Severity 'Warning' `
+            -Reason "an interrupt affinity policy is already configured on $($adapter.Name) (DevicePolicy=$existingPolicy, mask=$($adapter.InterruptMask)) - left alone. Clear it if you want this section to manage it.")
+        return
+    }
+
+    $key = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($adapter.PnpDeviceId)\Device Parameters\Interrupt Management\Affinity Policy"
+    $title = "$($adapter.Name) interrupts -> logical CPU $(if ($smt) { '0+1' } else { '0' })"
+
+    Set-OptRegistryValue -State $State -Path $key -Name 'DevicePolicy' -Type DWord -Value 4 `
+        -Section '7.5' -Tier 'Experimental' -Title "$title (DevicePolicy)" -RequiresReboot -VerifyMode PostReboot | Out-Null
+    Set-OptRegistryValue -State $State -Path $key -Name 'AssignmentSetOverride' -Type Binary -Value $maskBytes `
+        -Section '7.5' -Tier 'Experimental' -Title "$title (AssignmentSetOverride)" -RequiresReboot -VerifyMode PostReboot | Out-Null
+
+    [void](Add-OptDecision -State $State -Id 'S-7.5-NOTE' -Section '7.5' -Decision 'NoOp' `
+        -Title 'Interrupt affinity expectations' `
+        -Reason "designed as the pair to Launch-CS2.cmd: the game leaves physical core 0, the NIC's interrupts and DPCs move onto it. Community-measured, not lab-measured - A/B it with VProf (P1/P99, not averages). After the reboot, LatencyMon should show ndis.sys DPCs executing on CPU 0.")
 }

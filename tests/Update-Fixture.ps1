@@ -18,12 +18,19 @@
     Always regenerate fixtures through this script rather than -CaptureProfile
     directly, or the next refresh silently re-publishes the real values.
 
+.PARAMETER RawPath
+    Scrub an existing raw capture instead of taking a new one. Useful when
+    the capture already ran (for example from an elevated window) and only the
+    scrub step is needed.
+
 .EXAMPLE
     .\tests\Update-Fixture.ps1
+    .\tests\Update-Fixture.ps1 -RawPath $env:TEMP\cs2opt-rawprofile-<guid>.json
 #>
 [CmdletBinding()]
 param(
     [string]$Name = 'reference-amd-x3d',
+    [string]$RawPath,
     [switch]$KeepRaw
 )
 
@@ -31,13 +38,28 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dist     = Join-Path $repoRoot 'dist\Optimize-CS2.ps1'
 $outPath  = Join-Path $repoRoot "tests\fixtures\profiles\$Name.json"
-$rawPath  = Join-Path $env:TEMP "cs2opt-rawprofile-$([guid]::NewGuid()).json"
 
-if (-not (Test-Path -LiteralPath $dist)) { throw "Build first: build\Build-Script.ps1" }
+if ($RawPath) {
+    $rawPath = $RawPath
+    if (-not (Test-Path -LiteralPath $rawPath)) { throw "No raw capture at $rawPath" }
+}
+else {
+    $rawPath = Join-Path $env:TEMP "cs2opt-rawprofile-$([guid]::NewGuid()).json"
+    if (-not (Test-Path -LiteralPath $dist)) { throw "Build first: build\Build-Script.ps1" }
 
-$winPs = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-& $winPs -NoProfile -ExecutionPolicy Bypass -File $dist -CaptureProfile $rawPath | Out-Null
-if (-not (Test-Path -LiteralPath $rawPath)) { throw 'Profile capture produced no file.' }
+    # The capture needs admin rights (TPM / Secure Boot / BitLocker detectors).
+    # Checked here rather than left to the script's UAC self-relaunch: that
+    # relaunch runs in a separate window and returns before the capture is
+    # written, so this script would then look for a file that does not exist yet.
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        throw 'Run from an elevated PowerShell (the capture needs admin rights), or pass -RawPath to scrub a capture you already made.'
+    }
+
+    $winPs = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    & $winPs -NoProfile -ExecutionPolicy Bypass -File $dist -CaptureProfile $rawPath -NoElevate | Out-Null
+    if (-not (Test-Path -LiteralPath $rawPath)) { throw 'Profile capture produced no file.' }
+}
 
 $json = Get-Content -LiteralPath $rawPath -Raw
 
@@ -53,6 +75,13 @@ $json = [regex]::Replace($json, '"SerialNumber"\s*:\s*"[^"]*"', '"SerialNumber":
 $json = [regex]::Replace($json, '"BootDisk"\s*:\s*"[^"]*"',     '"BootDisk":  "FIXTURE-SERIAL-REDACTED"')
 $json = [regex]::Replace($json, '"NicMacs"\s*:\s*"[^"]*"',      '"NicMacs":  "00-00-5E-00-53-00"')
 
+# PnP instance paths carry a bus location and, for some devices, a serial.
+# Section 7.5 tests only need the SHAPE (a PCI\ prefix), never the real path.
+# Two backslashes here is ONE in the decoded value: a .NET replacement string
+# does not treat backslash specially, and the JSON text needs it escaped.
+$json = [regex]::Replace($json, '"(PnpDeviceId|ActiveAdapterPnpDeviceId)"\s*:\s*"PCI[^"]*"', '"$1":  "PCI\\VEN_0000&DEV_0000\\FIXTURE"')
+$json = [regex]::Replace($json, '"(PnpDeviceId|ActiveAdapterPnpDeviceId)"\s*:\s*"(?!PCI|null)[^"]*"', '"$1":  "FIXTURE-PNP-REDACTED"')
+
 # Per-device audio endpoint GUIDs.
 $json = [regex]::Replace($json, '"Id"\s*:\s*"\{[0-9a-fA-F-]{36}\}"', '"Id":  "{00000000-0000-0000-0000-000000000000}"')
 
@@ -66,7 +95,7 @@ $json = $json.Replace($env:USERNAME, 'user')
 
 Set-Content -LiteralPath $outPath -Value $json -Encoding UTF8
 
-if (-not $KeepRaw) { Remove-Item -LiteralPath $rawPath -Force -ErrorAction SilentlyContinue }
+if (-not $KeepRaw -and -not $RawPath) { Remove-Item -LiteralPath $rawPath -Force -ErrorAction SilentlyContinue }
 
 # --- verify the scrub actually worked ---------------------------------------
 $check = Get-Content -LiteralPath $outPath -Raw

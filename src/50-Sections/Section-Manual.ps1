@@ -70,6 +70,11 @@ function Invoke-OptGpuChecklist {
   G-Sync ......................... enable (inert when fps is far above refresh)
   GeForce Experience / NVIDIA App  disable the in-game overlay and its hotkeys
 
+  A/B (2026): several credible reports say in-game Reflex regressed in CS2 this
+  year. If the game feels less direct with Reflex on, test the launch option
+  -noreflex with Low Latency Mode = Ultra in the control panel, one session each
+  way. Anecdote-grade; keep whichever your own frametime graph prefers.
+
   The NVIDIA profile store (nvdrsdb*.bin) is a binary blob - this script will not
   write it. The one NVIDIA item that CAN be automated safely is disabling the
   "NVIDIA Telemetry Container" service and its scheduled tasks.
@@ -118,10 +123,20 @@ function Invoke-OptSteamChecklist {
         default  { 'Latency reduction: GPU vendor unknown - no recommendation' }
     }
 
+    $currentBlock = Get-OptCs2LaunchOptionsReview -Options $p.Games.Cs2LaunchOptions `
+        -GpuVendor ([string]$p.GPU.PrimaryVendor) -MaxRefreshHz $maxHz
+
+    $shaderCache = switch ($p.GPU.PrimaryVendor) {
+        'AMD'    { '%LOCALAPPDATA%\AMD\DxCache' }
+        'NVIDIA' { '%LOCALAPPDATA%\NVIDIA\DXCache' }
+        'Intel'  { '%LOCALAPPDATA%\Intel\ShaderCache' }
+        default  { 'your GPU vendor''s shader cache folder under %LOCALAPPDATA%' }
+    }
+
     [void](Add-OptManual -State $State -Id 'M-11' -Section '11' -Title 'Steam and CS2 settings' -Detail @"
   LAUNCH OPTIONS (Steam > CS2 > Properties):
       -nojoy -console
-
+$currentBlock
       -novid is deliberately absent: CS2 has no intro video, so it does nothing
       Do NOT add -high      : section 6.4 already sets priority correctly via IFEO
       Do NOT add -threads N : CS2's own scheduler handles this better
@@ -135,6 +150,12 @@ function Invoke-OptSteamChecklist {
                            (borderless routes through DWM and adds a frame of latency)
       Resolution           ${w}x${h} at $maxHz Hz - matches your detected panel
       $latency
+      Buffering to smooth over packet loss / jitter
+                           None (cl_net_buffer_ticks 0) on a stable wired link;
+                           1 tick only if you see jitter or prediction errors.
+                           This IS the supported control - do NOT set cl_interp /
+                           cl_interp_ratio, those are CS:GO-era and the engine
+                           manages them now
       engine_no_focus_sleep 0   if you alt-tab during warmup
       mat_queue_mode       leave at default (-1); forcing it is a legacy CS:GO habit
 
@@ -145,6 +166,16 @@ function Invoke-OptSteamChecklist {
       Driver-level fps cap at your sustained fps instead of CS2's fps_max -
                            CS2's own limiter paces poorly (fps bounces under
                            the target); a driver cap holds frame times flat
+      VRR on + fps_max ~3% under refresh$(if ($maxHz -gt 0) { " (about $([int]($maxHz * 0.97)) here)" })
+                           vs VRR off + uncapped. The cap keeps the panel in its
+                           VRR window for flat frame pacing; uncapped has the
+                           lowest latency. Pros are split - your call, measured
+
+  IF STUTTER APPEARS AFTER A DRIVER OR GAME UPDATE:
+      The shader cache is partly invalidated and rebuilds on the fly. Clear it
+      once ($shaderCache, or Disk Cleanup > "DirectX Shader Cache"),
+      then expect ~10 minutes of compile hitching on the first map before it
+      settles. Do not do this routinely.
 
   STEAM CLIENT:
       Disable the Steam Overlay in-game (FACEIT does not require it)
@@ -153,6 +184,55 @@ function Invoke-OptSteamChecklist {
       Downloads > disable "Allow downloads during gameplay"
       Shader pre-caching > leave ENABLED
 "@)
+}
+
+function Get-OptCs2LaunchOptionsReview {
+    <#
+        Renders the user's ACTUAL launch options under the recommendation, with
+        a flag for each token that contradicts the advice above. Pure function
+        so the flags are testable without Steam.
+
+        Returns a block of indented text (may be empty when nothing was read).
+    #>
+    [CmdletBinding()][OutputType([string])]
+    param(
+        # Untyped on purpose: a [string] parameter coerces $null to '' and the
+        # "nothing was read" case would render as "(none)".
+        [AllowNull()]$Options,
+        [AllowNull()][AllowEmptyString()][string]$GpuVendor,
+        [int]$MaxRefreshHz
+    )
+
+    if ($null -eq $Options) { return '' }
+    $opts = ([string]$Options).Trim()
+    $shown = if ($opts) { $opts } else { '(none)' }
+
+    $lines = New-Object System.Collections.ArrayList
+    [void]$lines.Add('')
+    [void]$lines.Add("      Currently set:  $shown")
+
+    $flags = New-Object System.Collections.ArrayList
+    if ($opts -match '(^|\s)-high(\s|$)')       { [void]$flags.Add('-high duplicates section 6.4 (IFEO priority) - remove it') }
+    if ($opts -match '(^|\s)-threads\s+\d+')    { [void]$flags.Add('-threads overrides a scheduler that does this better - remove it') }
+    if ($opts -match '(^|\s)-novid(\s|$)')      { [void]$flags.Add('-novid does nothing in CS2 - harmless, remove for tidiness') }
+    if ($opts -match '(^|\s)-noreflex(\s|$)' -and $GpuVendor -ne 'NVIDIA') {
+        [void]$flags.Add("-noreflex is inert on a $GpuVendor GPU - remove it")
+    }
+    if (-not ($opts -match '(^|\s)-nojoy(\s|$)')) { [void]$flags.Add('-nojoy is missing (skips joystick init; free)') }
+    if ($opts -match '\+fps_max\s+(\d+)') {
+        $cap = [int]$Matches[1]
+        if ($MaxRefreshHz -ge 200 -and $cap -gt 0 -and $cap -lt $MaxRefreshHz) {
+            [void]$flags.Add("+fps_max $cap is BELOW your $MaxRefreshHz Hz panel - it is leaving refresh on the table")
+        }
+    }
+
+    if ($flags.Count -eq 0) {
+        [void]$lines.Add('                      nothing to change')
+    }
+    else {
+        foreach ($f in $flags) { [void]$lines.Add("      !! $f") }
+    }
+    return ($lines -join "`n")
 }
 
 function Invoke-OptAudioChecklist {

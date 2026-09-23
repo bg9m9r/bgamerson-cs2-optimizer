@@ -7,6 +7,7 @@ function Get-OptCpuSkeleton {
         Microarch = 'Unknown'; HasVCache = $null; CcdCount = $null
         HasHybridTopology = $null; PpmDriver = $null
         L3TotalMB = $null; SmtEnabled = $null
+        VCacheDriverPresent = $null; VCacheDriverVersion = $null
     }
 }
 
@@ -116,6 +117,31 @@ function Get-OptCpuInfo {
         $running = $ppmDrivers | Where-Object { $_.State -eq 'Running' } | Select-Object -First 1
         if ($running) { $ppm = $running.Name.ToLowerInvariant() }
 
+        # --- 3D V-Cache Performance Optimizer driver -------------------------
+        # On dual-CCD X3D parts (7950X3D, 9950X3D...) this driver, together with
+        # Game Bar's game detection, is what keeps games on the cache CCD.
+        # Without it the scheduler treats both dies alike and games stutter.
+        # On single-CCD X3D parts it is present but has nothing to steer.
+        $vcachePresent = $null
+        $vcacheVersion = $null
+        if ($vendor -eq 'AMD') {
+            $vcachePresent = $false
+            $svc = Get-OptCimSafe -ClassName Win32_SystemDriver -Filter "Name='amd3dvcache'" | Select-Object -First 1
+            if ($svc) {
+                $vcachePresent = $true
+                $image = [string]$svc.PathName
+                if ($image) {
+                    try {
+                        $file = $image -replace '^\\\?\?\\', '' -replace '^\\SystemRoot', $env:SystemRoot -replace '^System32', "$env:SystemRoot\System32"
+                        if (Test-Path -LiteralPath $file) {
+                            $vcacheVersion = [string](Get-Item -LiteralPath $file).VersionInfo.FileVersion
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+
         $family = $cpu.Family
         $model  = $null
         if ($cpu.Description -match 'Model\s+(\d+)') { $model = [int]$Matches[1] }
@@ -142,6 +168,8 @@ function Get-OptCpuInfo {
             # a machine where it is entirely appropriate.
             HasHybridTopology = $topo.IsHybrid
             PpmDriver         = $ppm
+            VCacheDriverPresent = $vcachePresent
+            VCacheDriverVersion = $vcacheVersion
             TopologySource    = $topo.Source
         }
     }

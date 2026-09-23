@@ -4,7 +4,40 @@ function Get-OptGamesSkeleton {
     return [ordered]@{
         SteamPath = $null; LibraryPaths = @(); Cs2ExePath = $null
         Cs2Installed = $null; Cs2LibraryPath = $null; Cs2LibraryMediaType = 'Unknown'
+        Cs2LaunchOptions = $null
     }
+}
+
+function Get-OptCs2LaunchOptions {
+    <#
+        The CS2 launch options as Steam stores them, from a parsed
+        localconfig.vdf: UserLocalConfigStore > Software > Valve > Steam > apps
+        > 730 > LaunchOptions. Walked by exact key so a "7300" app or a "730"
+        key elsewhere in the tree cannot match.
+
+        Returns $null when the app block is absent (nothing known), and '' when
+        the block exists with no LaunchOptions key (the user has none set).
+        Read-only: Steam holds this file in memory and rewrites it on exit,
+        which is exactly why the script never writes it.
+    #>
+    [CmdletBinding()][OutputType([string])]
+    param([Parameter(Mandatory)][AllowNull()]$Parsed)
+
+    if (-not ($Parsed -is [System.Collections.IDictionary])) { return $null }
+
+    $node = $Parsed
+    foreach ($k in @('UserLocalConfigStore', 'Software', 'Valve', 'Steam', 'apps', '730')) {
+        $next = $null
+        foreach ($key in $node.Keys) {
+            if ([string]$key -eq $k) { $next = $node[$key]; break }
+        }
+        if (-not ($next -is [System.Collections.IDictionary])) { return $null }
+        $node = $next
+    }
+    foreach ($key in $node.Keys) {
+        if ([string]$key -eq 'LaunchOptions') { return [string]$node[$key] }
+    }
+    return ''
 }
 
 function ConvertFrom-OptVdf {
@@ -114,6 +147,7 @@ function Get-OptGamesInfo {
             return [ordered]@{
                 SteamPath = $null; LibraryPaths = @(); Cs2ExePath = $null
                 Cs2Installed = $false; Cs2LibraryPath = $null; Cs2LibraryMediaType = 'Unknown'
+                Cs2LaunchOptions = $null
             }
         }
 
@@ -160,6 +194,22 @@ function Get-OptGamesInfo {
             if ($vol) { $mediaType = $vol.MediaType }
         }
 
+        # --- launch options ---------------------------------------------------
+        # Several accounts can share one Steam install; the most recently
+        # written localconfig.vdf belongs to whoever plays here.
+        $launchOptions = $null
+        if ($cs2Exe) {
+            try {
+                $configs = @(Get-ChildItem -Path (Join-Path $steamPath 'userdata\*\config\localconfig.vdf') -ErrorAction SilentlyContinue |
+                             Sort-Object -Property LastWriteTime -Descending)
+                if ($configs.Count -gt 0) {
+                    $text = Get-Content -LiteralPath $configs[0].FullName -Raw -ErrorAction Stop
+                    $launchOptions = Get-OptCs2LaunchOptions -Parsed (ConvertFrom-OptVdf -Text $text)
+                }
+            }
+            catch { $launchOptions = $null }
+        }
+
         [ordered]@{
             SteamPath           = $steamPath
             LibraryPaths        = $libraries
@@ -167,6 +217,7 @@ function Get-OptGamesInfo {
             Cs2Installed        = ($null -ne $cs2Exe)
             Cs2LibraryPath      = $cs2Library
             Cs2LibraryMediaType = $mediaType
+            Cs2LaunchOptions    = $launchOptions
         }
     }
 }

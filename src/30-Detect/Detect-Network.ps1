@@ -4,7 +4,40 @@ function Get-OptNetworkSkeleton {
     return [ordered]@{
         Adapters = @(); ActiveAdapterName = $null; ActiveIsWireless = $null
         MultipleDefaultRoutes = $null; VirtualAheadOfPhysical = $null
+        ActiveAdapterPnpDeviceId = $null; ActiveAdapterMsiSupported = $null
+        ActiveAdapterInterruptPolicy = $null; IdleWirelessAdapters = @()
     }
+}
+
+function Get-OptAdapterInterruptInfo {
+    <#
+        Reads the device's interrupt configuration straight from its PnP
+        registry node. MSISupported tells section 7.5 whether the adapter uses
+        message-signalled interrupts (line-based IRQs are shared and must not be
+        pinned); DevicePolicy / AssignmentSetOverride reveal an affinity policy
+        someone else already set, which the section then leaves alone.
+    #>
+    [CmdletBinding()][OutputType([hashtable])]
+    param([Parameter(Mandatory)][AllowNull()][string]$PnpDeviceId)
+
+    $info = [ordered]@{ MsiSupported = $null; InterruptPolicy = $null; InterruptMask = $null }
+    if (-not $PnpDeviceId -or $PnpDeviceId -notlike 'PCI\*') { return $info }
+
+    $base = "SYSTEM\CurrentControlSet\Enum\$PnpDeviceId\Device Parameters\Interrupt Management"
+    $msi = Get-OptRegValueSafe -Hive HKLM -SubKey "$base\MessageSignaledInterruptProperties" -Name 'MSISupported'
+    if ($null -ne $msi) { $info.MsiSupported = [int]$msi }
+
+    $policy = Get-OptRegValueSafe -Hive HKLM -SubKey "$base\Affinity Policy" -Name 'DevicePolicy'
+    if ($null -ne $policy) { $info.InterruptPolicy = [int]$policy }
+
+    $mask = Get-OptRegValueSafe -Hive HKLM -SubKey "$base\Affinity Policy" -Name 'AssignmentSetOverride'
+    if ($null -ne $mask) {
+        # REG_BINARY, REG_DWORD and REG_QWORD are all legal here; normalise to a
+        # hex string so the profile stays serializable and comparable.
+        $bytes = if ($mask -is [byte[]]) { $mask } else { [System.BitConverter]::GetBytes([uint64]$mask) }
+        $info.InterruptMask = ([System.BitConverter]::ToString([byte[]]$bytes)).Replace('-', '')
+    }
+    return $info
 }
 
 function Get-OptNetworkInfo {
@@ -52,11 +85,18 @@ function Get-OptNetworkInfo {
             $isVirtual = [bool]$n.Virtual -or
                          ($n.InterfaceDescription -match 'WAN Miniport|Hyper-V|VirtualBox|VMware|TAP-|Tailscale|WireGuard|Bluetooth|Loopback|Npcap')
 
+            $pnpId = [string]$n.PnPDeviceID
+            $irq = Get-OptAdapterInterruptInfo -PnpDeviceId $pnpId
+
             $adapters += [ordered]@{
                 Name             = $n.Name
                 IfIndex          = [int]$n.ifIndex
                 Description      = $n.InterfaceDescription
                 MacAddress       = $n.MacAddress
+                PnpDeviceId      = $(if ($pnpId) { $pnpId } else { $null })
+                MsiSupported     = $irq.MsiSupported
+                InterruptPolicy  = $irq.InterruptPolicy
+                InterruptMask    = $irq.InterruptMask
                 LinkSpeed        = [string]$n.LinkSpeed
                 Status           = [string]$n.Status
                 IsActive         = ($n.Status -eq 'Up')
@@ -94,6 +134,17 @@ function Get-OptNetworkInfo {
             }
         }
 
+        # A Wi-Fi radio that is enabled but not connected keeps scanning in the
+        # background while the wired NIC carries the game. Only meaningful when
+        # the active adapter is wired - on a Wi-Fi-only machine there is nothing
+        # to switch off.
+        $idleWireless = @()
+        if ($active -and -not $active.IsWireless) {
+            $idleWireless = @($adapters |
+                Where-Object { $_.IsWireless -and -not $_.IsVirtual -and $_.Status -eq 'Disconnected' } |
+                ForEach-Object { $_.Name })
+        }
+
         [ordered]@{
             Adapters              = $adapters
             ActiveAdapterName     = $(if ($active) { $active.Name } else { $null })
@@ -101,6 +152,10 @@ function Get-OptNetworkInfo {
             ActiveIsWireless      = $(if ($active) { $active.IsWireless } else { $null })
             ActiveDriverProvider  = $(if ($active) { $active.DriverProvider } else { $null })
             ActiveLinkSpeed       = $(if ($active) { $active.LinkSpeed } else { $null })
+            ActiveAdapterPnpDeviceId     = $(if ($active) { $active.PnpDeviceId } else { $null })
+            ActiveAdapterMsiSupported    = $(if ($active) { $active.MsiSupported } else { $null })
+            ActiveAdapterInterruptPolicy = $(if ($active) { $active.InterruptPolicy } else { $null })
+            IdleWirelessAdapters  = $idleWireless
             MultipleDefaultRoutes = (@($adapters | Where-Object { $_.IsDefaultRoute -and $_.IsActive }).Count -gt 1)
             VirtualAheadOfPhysical= $virtualAhead
         }

@@ -122,8 +122,8 @@ Cumulative — `Aggressive` includes `Safe`, `Experimental` includes both.
 | Tier | Contains |
 |---|---|
 | `Safe` | power plan, Fast Startup, filesystem, pagefile, refresh-rate enforcement, GameDVR/Game Mode, mouse acceleration, accessibility hotkeys, TCP stack |
-| `Aggressive` *(default)* | + MMCSS, priority separation, IFEO process priority, NIC advanced properties, scheduled tasks, telemetry, shell surfaces, Defender exclusions |
-| `Experimental` | + MPO disable, MMAgent, SysMain, device queue sizes, Nagle, DiagTrack |
+| `Aggressive` *(default)* | + MMCSS, priority separation, IFEO process priority, NIC advanced properties, UDP receive offload (URO) off, scheduled tasks, telemetry, shell surfaces, Defender exclusions |
+| `Experimental` | + MPO disable, MMAgent, SysMain, device queue sizes, Nagle, NIC interrupt affinity to core 0, DiagTrack |
 
 `Experimental` items are the ones with a plausible "the machine feels worse" outcome. Apply them **one per reboot** — bundling them makes attribution impossible.
 
@@ -232,7 +232,7 @@ Registry tests run against a real sandbox key with a fail-closed interlock: a te
 .\tests\Update-Fixture.ps1
 ```
 
-Always use this rather than `-CaptureProfile` directly. A raw capture contains device identifiers — NIC MAC addresses, disk serial numbers, audio endpoint GUIDs — and this script scrubs them before the fixture lands in the repo, then **fails loudly if anything survived**. No test asserts on a serial, a MAC, or the fingerprint hash, so scrubbing costs nothing.
+Run it from an **elevated** shell (the capture needs admin rights). If a capture already exists, `-RawPath <file>` scrubs it without capturing again. Always use this rather than `-CaptureProfile` directly. A raw capture contains device identifiers — NIC MAC addresses, disk serial numbers, audio endpoint GUIDs — and this script scrubs them before the fixture lands in the repo, then **fails loudly if anything survived**. No test asserts on a serial, a MAC, or the fingerprint hash, so scrubbing costs nothing.
 
 ---
 
@@ -253,7 +253,11 @@ Read the report's "Did this actually help?" section before measuring anything.
 
 **Genuinely measurable:** NIC link speed, boot time, idle committed bytes, DPC latency, and 1%/0.1% frame-time lows from a *fixed demo playback* (never a live match — it isn't repeatable).
 
-**Not measurable, and labelled as such in the report:** priority separation, device queue sizes, Nagle (a TCP tweak; CS2 traffic is UDP), and MMAgent. Every telemetry, policy and inbox-app item is disk and RAM hygiene — not frame rate.
+**Not measurable, and labelled as such in the report:** priority separation, device queue sizes, Nagle (a TCP tweak; CS2 traffic is UDP), UDP receive offload (it only merges equal-length datagrams, which CS2 rarely sends), and MMAgent. Every telemetry, policy and inbox-app item is disk and RAM hygiene — not frame rate.
+
+**NIC interrupt affinity (Experimental, 7.5)** is designed as the pair to the launcher: the game leaves physical core 0, the NIC's interrupts and DPCs move onto it. It is community-measured, not lab-measured — A/B it the same way the launcher was.
+
+**Researched and rejected (2026):** the Windows "Low Latency Profile" CPU boost (only fires for Start-menu and flyout launches), TCP receive segment coalescing (TCP only), UDP send offload (only sockets that opt in), `PowerThrottlingOff` (inert under the performance power plan), kernel-mode stack protection changes (security teardown), `DisablePagingExecutive`/`LargeSystemCache` (server-era), and the `cl_interp 0.015625` / `cl_interp_ratio 1` bundle (CS:GO-era; the in-game *Buffering* setting is the supported control now).
 
 If a frame-time capture shows nothing outside run-to-run variance, that's the expected result, not a failed application.
 

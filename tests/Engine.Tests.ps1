@@ -289,6 +289,214 @@ Describe '-SkipRecovery' {
     }
 }
 
+Describe 'Section 7.4 - UDP receive offload' {
+
+    BeforeAll {
+        $script:udpFixture = Get-Content -LiteralPath (Join-Path $script:Cs2OptRepoRoot 'tests\fixtures\cmdout\netsh-udp-global.txt') -Raw
+    }
+    BeforeEach {
+        $script:state = New-Cs2OptTestState -Tier 'Aggressive' -PathsRoot (Join-Path $TestDrive "uro-$([guid]::NewGuid())")
+    }
+    AfterEach {
+        Remove-Cs2OptTestState -State $script:state
+    }
+
+    It 'parses the URO state out of captured netsh output' {
+        $lines = Get-OptCommandLines -Text $script:udpFixture
+        Get-OptNetshGlobalValue -Lines $lines -Label 'Receive Offload State' | Should -Be 'enabled'
+        Get-OptNetshGlobalValue -Lines $lines -Label 'Send Offload State'    | Should -Be 'enabled'
+        Get-OptNetshGlobalValue -Lines $lines -Label 'No Such Label'         | Should -BeNullOrEmpty
+        # The 7.2 fixture must parse through the same helper.
+        $tcp = Get-OptCommandLines -Text (Get-Content -LiteralPath (Join-Path $script:Cs2OptRepoRoot 'tests\fixtures\cmdout\netsh-tcp-global.txt') -Raw)
+        Get-OptNetshGlobalValue -Lines $tcp -Label 'Receive Window Auto-Tuning Level' | Should -Not -BeNullOrEmpty
+    }
+
+    It 'disables URO through the chokepoint and records a NetshUdpGlobal change with the prior state' {
+        $script:calls = New-Object System.Collections.ArrayList
+        Mock Invoke-OptNativeCommand {
+            [void]$script:calls.Add(@($ArgumentList) -join ' ')
+            if ((@($ArgumentList) -join ' ') -like '*show global*') {
+                return @{ Success = $true; ExitCode = 0; StdOut = $script:udpFixture; StdErr = '' }
+            }
+            return @{ Success = $true; ExitCode = 0; StdOut = 'Ok.'; StdErr = '' }
+        }
+
+        Invoke-OptSection74Uro -State $script:state
+
+        $script:calls | Should -Contain 'int udp show global'
+        $script:calls | Should -Contain 'int udp set global uro=disabled'
+
+        $change = @($script:state.Changes | Where-Object { $_.Type -eq 'NetshUdpGlobal' })
+        $change.Count | Should -Be 1
+        $change[0].OldValue | Should -Be 'enabled'
+        $change[0].NewValue | Should -Be 'disabled'
+        $change[0].Target.Setting | Should -Be 'uro'
+
+        $d = @($script:state.Decisions | Where-Object { $_.Id -eq 'S-7.4-uro' })[0]
+        $d.Decision | Should -Be 'Applied'
+    }
+
+    It 'does nothing, and records nothing, when URO is already disabled' {
+        Mock Invoke-OptNativeCommand {
+            return @{ Success = $true; ExitCode = 0; StdOut = ($script:udpFixture -replace 'Receive Offload State\s*:\s*enabled', 'Receive Offload State               : disabled'); StdErr = '' }
+        }
+        Invoke-OptSection74Uro -State $script:state
+        @($script:state.Changes).Count | Should -Be 0
+        @($script:state.Decisions | Where-Object { $_.Id -eq 'S-7.4-uro' })[0].Decision | Should -Be 'NoOp'
+    }
+
+    It 'rolls URO back to its recorded prior state' {
+        $script:calls = New-Object System.Collections.ArrayList
+        Mock Invoke-OptNativeCommand {
+            [void]$script:calls.Add(@($ArgumentList) -join ' ')
+            return @{ Success = $true; ExitCode = 0; StdOut = 'Ok.'; StdErr = '' }
+        }
+        $change = @{ Type = 'NetshUdpGlobal'; Target = @{ Setting = 'uro' }; OldValue = 'enabled'; NewValue = 'disabled'; Reversible = 'Full' }
+        $r = Invoke-OptRollbackEntry -State $script:state -Change $change
+        $r.Result | Should -Be 'RESTORED'
+        $script:calls | Should -Contain 'int udp set global uro=enabled'
+        Get-OptRollbackDescription -Change $change | Should -Match 'udp'
+    }
+}
+
+Describe 'Section 7.5 - NIC interrupt affinity' {
+
+    BeforeEach {
+        $script:state = New-Cs2OptTestState -Tier 'Experimental' -PathsRoot (Join-Path $TestDrive "irq-$([guid]::NewGuid())")
+        $script:state.Profile = New-Cs2OptTestProfile @{
+            'CPU.LogicalCores' = 8; 'CPU.SmtEnabled' = $false
+            'Network.ActiveAdapterName' = 'TestNic'
+            'Network.Adapters' = @([ordered]@{
+                Name = 'TestNic'; PnpDeviceId = 'PCI\VEN_10EC&DEV_8125\FIXTURE'
+                MsiSupported = 1; InterruptPolicy = $null; InterruptMask = $null
+            })
+        }
+    }
+    AfterEach {
+        Remove-Cs2OptTestState -State $script:state
+    }
+
+    It 'writes the documented affinity policy for logical CPU 0 and rolls it back to nothing' {
+        $sandbox = $script:state['SandboxRoot']
+        New-Item -Path "HKCU:\$sandbox" -Force | Out-Null
+        $before = Get-Cs2OptSandboxSnapshot -SandboxRoot $sandbox
+
+        Invoke-OptSection75InterruptAffinity -State $script:state
+
+        # Assert the writes happened before asserting the rollback (the
+        # vacuous-pass lesson from the REG_BINARY test).
+        $changes = @($script:state.Changes)
+        $changes.Count | Should -Be 2
+        $keyPath = "HKCU:\$sandbox\HKLM\SYSTEM\CurrentControlSet\Enum\PCI\VEN_10EC&DEV_8125\FIXTURE\Device Parameters\Interrupt Management\Affinity Policy"
+        (Get-ItemProperty -LiteralPath $keyPath -Name 'DevicePolicy').DevicePolicy | Should -Be 4
+        $mask = (Get-ItemProperty -LiteralPath $keyPath -Name 'AssignmentSetOverride').AssignmentSetOverride
+        [System.BitConverter]::ToString([byte[]]$mask) | Should -Be '01-00-00-00-00-00-00-00'
+        @($script:state.Decisions | Where-Object { $_.Id -eq 'S-7.5-NOTE' }).Count | Should -Be 1
+
+        Write-OptManifest -State $script:state -Final
+        Invoke-OptRollback -State $script:state -ManifestPath $script:state.Paths.RunManifest | Out-Null
+
+        Compare-Cs2OptSnapshot -Before $before -After (Get-Cs2OptSandboxSnapshot -SandboxRoot $sandbox) | Should -BeNullOrEmpty
+    }
+
+    It 'uses the 0+1 pair when SMT is on' {
+        $script:state.Profile.CPU.SmtEnabled = $true
+        Invoke-OptSection75InterruptAffinity -State $script:state
+        $keyPath = "HKCU:\$($script:state['SandboxRoot'])\HKLM\SYSTEM\CurrentControlSet\Enum\PCI\VEN_10EC&DEV_8125\FIXTURE\Device Parameters\Interrupt Management\Affinity Policy"
+        $mask = (Get-ItemProperty -LiteralPath $keyPath -Name 'AssignmentSetOverride').AssignmentSetOverride
+        [System.BitConverter]::ToString([byte[]]$mask) | Should -Be '03-00-00-00-00-00-00-00'
+    }
+
+    It 'leaves a policy someone else configured alone' {
+        $script:state.Profile.Network.Adapters[0].InterruptPolicy = 1
+        $script:state.Profile.Network.Adapters[0].InterruptMask = '0F000000'
+        Invoke-OptSection75InterruptAffinity -State $script:state
+        @($script:state.Changes).Count | Should -Be 0
+        @($script:state.Decisions | Where-Object { $_.Id -eq 'S-7.5' })[0].Decision | Should -Be 'Manual'
+    }
+
+    It 'refuses below the Experimental tier' {
+        $script:state.Tier = 'Aggressive'
+        Invoke-OptSection75InterruptAffinity -State $script:state
+        @($script:state.Changes).Count | Should -Be 0
+        @($script:state.Decisions | Where-Object { $_.Id -eq 'S-7.5' })[0].Decision | Should -Be 'Off'
+    }
+}
+
+Describe 'Detection helpers added with the 2026 research pass' {
+
+    It 'reads CS2 launch options from a localconfig.vdf tree by exact key, ignoring decoys' {
+        $vdf = @'
+"UserLocalConfigStore"
+{
+    "friends"
+    {
+        "730"        { "LaunchOptions" "-decoy-friend" }
+    }
+    "Software"
+    {
+        "Valve"
+        {
+            "Steam"
+            {
+                "apps"
+                {
+                    "7300"   { "LaunchOptions" "-decoy-prefix" }
+                    "730"
+                    {
+                        "LastPlayed"     "1700000000"
+                        "LaunchOptions"  "+fps_max 600 -nojoy -console"
+                        "cloud"          { "last_sync_state" "synchronized" }
+                    }
+                    "570"    { "LaunchOptions" "-decoy-other" }
+                }
+            }
+        }
+    }
+}
+'@
+        Get-OptCs2LaunchOptions -Parsed (ConvertFrom-OptVdf -Text $vdf) | Should -Be '+fps_max 600 -nojoy -console'
+    }
+
+    It 'distinguishes "no launch options set" from "nothing known"' {
+        $withBlock = '"UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "730" { "LastPlayed" "1" } } } } } }'
+        Get-OptCs2LaunchOptions -Parsed (ConvertFrom-OptVdf -Text $withBlock) | Should -Be ''
+
+        $noBlock = '"UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "570" { "LaunchOptions" "x" } } } } } }'
+        Get-OptCs2LaunchOptions -Parsed (ConvertFrom-OptVdf -Text $noBlock) | Should -BeNullOrEmpty
+        Get-OptCs2LaunchOptions -Parsed $null | Should -BeNullOrEmpty
+    }
+
+    It 'reviews launch options against the checklist advice' {
+        $ok = Get-OptCs2LaunchOptionsReview -Options '+fps_max 600 -nojoy -console' -GpuVendor 'AMD' -MaxRefreshHz 540
+        $ok | Should -Match 'Currently set:\s+\+fps_max 600 -nojoy -console'
+        $ok | Should -Match 'nothing to change'
+
+        $bad = Get-OptCs2LaunchOptionsReview -Options '-high -threads 8 -novid -noreflex +fps_max 300' -GpuVendor 'AMD' -MaxRefreshHz 540
+        $bad | Should -Match '-high'
+        $bad | Should -Match '-threads'
+        $bad | Should -Match '-novid'
+        $bad | Should -Match 'noreflex is inert'
+        $bad | Should -Match '-nojoy is missing'
+        $bad | Should -Match 'fps_max 300 is BELOW'
+
+        # -noreflex is a legitimate NVIDIA experiment, not a flag there.
+        (Get-OptCs2LaunchOptionsReview -Options '-noreflex -nojoy' -GpuVendor 'NVIDIA' -MaxRefreshHz 240) | Should -Not -Match 'noreflex is inert'
+
+        # Nothing read -> nothing rendered; empty string -> "(none)".
+        Get-OptCs2LaunchOptionsReview -Options $null -GpuVendor 'AMD' -MaxRefreshHz 540 | Should -Be ''
+        Get-OptCs2LaunchOptionsReview -Options '' -GpuVendor 'AMD' -MaxRefreshHz 540 | Should -Match '\(none\)'
+    }
+
+    It 'annotates known overlay / RGB suites in the startup inventory and nothing else' {
+        Get-OptStartupEntryNote -Name 'Discord' -Command '"C:\Users\x\AppData\Local\Discord\Update.exe" --processStart Discord.exe' | Should -Match 'overlay'
+        Get-OptStartupEntryNote -Name 'LGHUB' -Command '"C:\Program Files\LGHUB\lghub.exe" --background' | Should -Match 'RGB'
+        Get-OptStartupEntryNote -Name 'SecurityHealth' -Command 'C:\Windows\system32\SecurityHealthSystray.exe' | Should -Be ''
+        # 'obs' must not match inside unrelated words.
+        Get-OptStartupEntryNote -Name 'Jobs Scheduler' -Command 'C:\Tools\jobs.exe' | Should -Be ''
+    }
+}
+
 Describe 'No-unrecorded-mutation invariant' {
 
     It 'records every value it changed, and changes nothing it did not record' {

@@ -261,10 +261,11 @@ function Write-OptMarkdownReport {
         & $add ''
         & $add 'Nothing here was disabled: the script cannot distinguish an anti-cheat component or peripheral driver from bloat.'
         & $add ''
-        & $add '| Source | Name | Command |'
-        & $add '|---|---|---|'
+        & $add '| Source | Name | Command | Note |'
+        & $add '|---|---|---|---|'
         foreach ($e in @($State['StartupInventory'])) {
-            & $add "| $($e.Source) | $($e.Name) | $(([string]$e.Command) -replace '\|', '\|') |"
+            $note = if ($e.PSObject.Properties['Note']) { [string]$e.Note } else { '' }
+            & $add "| $($e.Source) | $($e.Name) | $(([string]$e.Command) -replace '\|', '\|') | $note |"
         }
         & $add ''
     }
