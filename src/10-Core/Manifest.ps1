@@ -19,9 +19,10 @@ function Write-OptManifest {
     if ($State.DryRun -and -not $Final) { return }
     if (-not $State.Paths) { return }
 
+    $toolVersion = if ($State.Contains('Version') -and $State['Version']) { [string]$State['Version'] } else { 'unknown' }
     $manifest = [ordered]@{
         SchemaVersion = 1
-        Tool          = [ordered]@{ Name = 'cs2-opt'; Version = '1.0.0' }
+        Tool          = [ordered]@{ Name = 'cs2-opt'; Version = $toolVersion }
         Run           = Get-OptStateSnapshot -State $State
         Fingerprint   = $(if ($State.Profile) { $State.Profile.Fingerprint } else { $null })
         Profile       = $State.Profile
@@ -46,7 +47,18 @@ function Write-OptManifest {
         Move-Item -LiteralPath $tmp -Destination $State.Paths.RunManifest -Force -ErrorAction Stop
 
         if ($Final -and -not $State.DryRun) {
-            Copy-Item -LiteralPath $State.Paths.RunManifest -Destination $State.Paths.Manifest -Force -ErrorAction Stop
+            # A run that changed nothing must not become "the latest run".
+            # -VerifyOnly and -Rollback both resolve through this pointer, so
+            # replacing it with an empty manifest would make the previous run's
+            # reboot-deferred changes vanish from verification and undo alike.
+            # Seen live: an all-correct re-run before the reboot the earlier
+            # run needed.
+            if (@($State.Changes).Count -eq 0 -and (Test-Path -LiteralPath $State.Paths.Manifest)) {
+                Write-OptLog -Level Detail 'No changes this run - the latest-run pointer still refers to the previous run, so -VerifyOnly and -Rollback keep working on it.'
+            }
+            else {
+                Copy-Item -LiteralPath $State.Paths.RunManifest -Destination $State.Paths.Manifest -Force -ErrorAction Stop
+            }
         }
     }
     catch {

@@ -115,6 +115,7 @@ function Write-OptMarkdownReport {
     if ($State.Contains('Version') -and $State['Version']) {
         $u = $State['UpdateCheck']
         $updateNote = if ($u -and $u.Checked -and $u.Newer -eq $true) { " - **$($u.Latest) is available**: $($u.Url)" }
+                      elseif ($u -and $u.Checked -and $u.Ahead) { " (a build ahead of the latest release, $($u.Latest))" }
                       elseif ($u -and $u.Checked) { ' (latest release)' }
                       else { '' }
         & $add "- **Script**: v$($State['Version'])$updateNote"

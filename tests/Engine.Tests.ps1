@@ -762,6 +762,42 @@ Describe 'Regressions from the first full Experimental run' {
     }
 }
 
+Describe 'Latest-run manifest pointer' {
+
+    It 'is not replaced by a run that changed nothing, so -VerifyOnly and -Rollback keep the previous run' {
+        $root = Join-Path $TestDrive "ptr-$([guid]::NewGuid())"
+
+        $first = New-Cs2OptTestState -Tier 'Safe' -PathsRoot $root
+        try {
+            Set-OptRegistryValue -State $first -Path 'HKLM:\SOFTWARE\Ptr' -Name 'A' -Type DWord -Value 1 -Section '4.1' -Tier 'Safe' | Out-Null
+            @($first.Changes).Count | Should -Be 1
+            Write-OptManifest -State $first -Final
+            (Read-OptManifest -Path $first.Paths.Manifest).Run.RunId | Should -Be $first.RunId
+        }
+        finally { Remove-Cs2OptTestState -State $first }
+
+        # Same root, second run, nothing to do.
+        $second = New-Cs2OptTestState -Tier 'Safe' -PathsRoot $root
+        try {
+            @($second.Changes).Count | Should -Be 0
+            Write-OptManifest -State $second -Final
+            Test-Path -LiteralPath $second.Paths.RunManifest | Should -BeTrue -Because 'the empty run still gets its own manifest'
+            (Read-OptManifest -Path $second.Paths.Manifest).Run.RunId | Should -Be $first.RunId -Because 'the pointer must keep the run that has changes to verify and undo'
+        }
+        finally { Remove-Cs2OptTestState -State $second }
+    }
+
+    It 'is written by a first-ever run even when it changed nothing' {
+        $state = New-Cs2OptTestState -Tier 'Safe' -PathsRoot (Join-Path $TestDrive "ptr0-$([guid]::NewGuid())")
+        try {
+            Write-OptManifest -State $state -Final
+            (Read-OptManifest -Path $state.Paths.Manifest).Run.RunId | Should -Be $state.RunId
+            (Read-OptManifest -Path $state.Paths.Manifest).Tool.Version | Should -Not -Be '1.0.0' -Because 'the manifest carries the real script version'
+        }
+        finally { Remove-Cs2OptTestState -State $state }
+    }
+}
+
 Describe 'No-unrecorded-mutation invariant' {
 
     It 'records every value it changed, and changes nothing it did not record' {

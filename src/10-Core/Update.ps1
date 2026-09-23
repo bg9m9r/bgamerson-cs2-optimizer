@@ -72,7 +72,7 @@ function Invoke-OptUpdateCheck {
         [Parameter(Mandatory)][AllowEmptyString()][string]$CurrentVersion
     )
 
-    $result = [ordered]@{ Checked = $false; Newer = $null; Latest = $null; Url = $null; Note = $null }
+    $result = [ordered]@{ Checked = $false; Newer = $null; Ahead = $false; Latest = $null; Url = $null; Note = $null }
 
     try {
         $rel = Get-OptLatestRelease
@@ -82,6 +82,7 @@ function Invoke-OptUpdateCheck {
         $result.Latest  = $rel.TagName
         $result.Url     = $rel.Url
         $result.Newer   = $cmp.Newer
+        $result.Ahead   = ($cmp.Newer -eq $false -and $cmp.Latest -lt $cmp.Current)
 
         if ($cmp.Newer -eq $true) {
             Write-OptLog -Level Warn "A newer release is available: $($rel.TagName) (this is v$CurrentVersion) - $($rel.Url)"
