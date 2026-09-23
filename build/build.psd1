@@ -29,6 +29,7 @@
         'src\10-Core\State.ps1'
         'src\10-Core\Paths.ps1'
         'src\10-Core\Logging.ps1'
+        'src\10-Core\Update.ps1'
         'src\10-Core\Decision.ps1'
         'src\10-Core\Invoke.ps1'
         'src\10-Core\Tier.ps1'

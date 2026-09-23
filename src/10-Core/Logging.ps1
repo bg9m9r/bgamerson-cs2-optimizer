@@ -93,5 +93,8 @@ function Write-OptBanner {
     }
 
     Write-Host "  Run  $($State.RunId)" -ForegroundColor DarkGray
+    if ($State.Contains('Version') -and $State['Version']) {
+        Write-Host "  Ver  v$($State['Version'])" -ForegroundColor DarkGray
+    }
     Write-Host '  ------------------------------------------------------------------' -ForegroundColor DarkCyan
 }

@@ -59,4 +59,17 @@ Describe 'Built artifact' {
     It 'ships the launcher alongside it' {
         Test-Path -LiteralPath (Join-Path $script:RepoRoot 'dist\Run-Optimize-CS2.cmd') | Should -BeTrue
     }
+
+    It 'declares a parseable version constant that the update check can compare' {
+        # The release workflow refuses a tag that does not match this constant,
+        # so the regex here must be the same shape the workflow uses.
+        $src = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'src\00-Header.ps1') -Raw
+        $pattern = [regex]::Escape('$script:OptVersion') + "\s*=\s*'([^']+)'"
+        $src | Should -Match $pattern
+        $version = [regex]::Match($src, $pattern).Groups[1].Value
+        { [version]$version } | Should -Not -Throw
+        ([version]$version).Build | Should -BeGreaterOrEqual 0 -Because 'three components, like the release tags'
+
+        (Get-Content -LiteralPath $script:DistPath -Raw) | Should -Match ([regex]::Escape("`$script:OptVersion = '$version'"))
+    }
 }

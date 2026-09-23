@@ -497,6 +497,42 @@ Describe 'Detection helpers added with the 2026 research pass' {
     }
 }
 
+Describe 'Release update check' {
+
+    It 'compares versions with or without the v prefix' {
+        (Compare-OptReleaseVersion -Current '1.0.7' -Latest 'v1.0.8').Newer  | Should -BeTrue
+        (Compare-OptReleaseVersion -Current 'v1.0.8' -Latest 'v1.0.8').Newer | Should -BeFalse
+        (Compare-OptReleaseVersion -Current '1.0.9' -Latest 'v1.0.8').Newer  | Should -BeFalse
+        (Compare-OptReleaseVersion -Current '1.0.7' -Latest 'v1.10.0').Newer | Should -BeTrue -Because 'numeric, not lexical'
+    }
+
+    It 'never reports an update from a tag it cannot parse' {
+        (Compare-OptReleaseVersion -Current '1.0.7' -Latest 'nightly').Newer | Should -BeNullOrEmpty
+        (Compare-OptReleaseVersion -Current '' -Latest 'v1.0.8').Newer       | Should -BeNullOrEmpty
+        (Compare-OptReleaseVersion -Current $null -Latest $null).Newer       | Should -BeNullOrEmpty
+    }
+
+    It 'announces a newer release and records it on the state' {
+        Mock Get-OptLatestRelease { @{ TagName = 'v9.9.9'; Url = 'https://example.invalid/rel' } }
+        $state = New-OptState -Tier 'Safe' -Parameters @{}
+        $r = Invoke-OptUpdateCheck -State $state -CurrentVersion '1.0.8'
+        $r.Checked | Should -BeTrue
+        $r.Newer   | Should -BeTrue
+        $state['UpdateCheck'].Latest | Should -Be 'v9.9.9'
+    }
+
+    It 'swallows every network failure and lets the run continue' {
+        Mock Get-OptLatestRelease { throw 'The remote name could not be resolved' }
+        $state = New-OptState -Tier 'Safe' -Parameters @{}
+        $r = $null
+        { $r = Invoke-OptUpdateCheck -State $state -CurrentVersion '1.0.8' } | Should -Not -Throw
+        $r = $state['UpdateCheck']
+        $r.Checked | Should -BeFalse
+        $r.Newer   | Should -BeNullOrEmpty
+        $r.Note    | Should -Match 'resolved'
+    }
+}
+
 Describe 'No-unrecorded-mutation invariant' {
 
     It 'records every value it changed, and changes nothing it did not record' {

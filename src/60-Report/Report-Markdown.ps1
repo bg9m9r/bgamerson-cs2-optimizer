@@ -112,6 +112,13 @@ function Write-OptMarkdownReport {
     & $add "- **When**: $($State.StartedUtc) (UTC)"
     & $add "- **Tier**: $($State.Tier)$(if ($State.DryRun) { '  **(DRY RUN - nothing was modified)**' })"
     & $add "- **Machine**: $env:COMPUTERNAME"
+    if ($State.Contains('Version') -and $State['Version']) {
+        $u = $State['UpdateCheck']
+        $updateNote = if ($u -and $u.Checked -and $u.Newer -eq $true) { " - **$($u.Latest) is available**: $($u.Url)" }
+                      elseif ($u -and $u.Checked) { ' (latest release)' }
+                      else { '' }
+        & $add "- **Script**: v$($State['Version'])$updateNote"
+    }
     & $add ''
 
     # --- detected profile ---

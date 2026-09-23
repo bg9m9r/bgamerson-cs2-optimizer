@@ -62,6 +62,13 @@
     lost or corrupted, and the coarse whole-system undo of a restore point.
     Worth it if you want a fast, quiet run; not worth it on a first run.
 
+.PARAMETER NoUpdateCheck
+    Skips the start-up release check. By default the script makes one HTTPS
+    request to GitHub's releases API (5-second timeout) to tell you whether a
+    newer release exists. It never downloads or installs anything, sends
+    nothing about the machine, and continues silently when offline. -Rollback
+    and -ProfileFrom never check.
+
 .EXAMPLE
     .\Optimize-CS2.ps1 -DryRun
     .\Optimize-CS2.ps1 -Tier Safe
@@ -107,7 +114,9 @@ param(
 
     # Suppress the UAC self-relaunch when unelevated: print the message and
     # exit 2 instead. For CI and scripted callers that must never pop a prompt.
-    [switch]$NoElevate
+    [switch]$NoElevate,
+
+    [switch]$NoUpdateCheck
 )
 
 # StrictMode 3.0 rather than Latest: 3.0 still catches uninitialised variables
@@ -116,6 +125,11 @@ param(
 # $p.CPU.HasVCache on a failed CPU detection must return $null, not throw.
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
+
+# Bumped for every release. The release workflow refuses to publish a tag
+# whose number does not match this constant, so a stale value cannot ship and
+# make the update check nag users about their own version.
+$script:OptVersion = '1.0.8'
 
 # '#Requires -Version 5.1' does NOT exclude PowerShell 7 - 7.x satisfies ">= 5.1".
 # Under PS7 the Appx, DISM, MMAgent, NetAdapter, Defender, BitLocker,

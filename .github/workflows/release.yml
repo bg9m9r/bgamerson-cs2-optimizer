@@ -30,6 +30,23 @@ jobs:
             Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
           }
 
+      # The script's start-up update check compares $script:OptVersion with
+      # the latest release tag. A tag that does not match the constant would
+      # make every copy of that release nag its users about themselves.
+      - name: Verify the version constant matches the tag
+        shell: powershell
+        run: |
+          $tag = '${{ github.event.inputs.tag }}'
+          if (-not $tag) { $tag = $env:GITHUB_REF -replace '^refs/tags/', '' }
+          $src = Get-Content src\00-Header.ps1 -Raw
+          $pattern = [regex]::Escape('$script:OptVersion') + "\s*=\s*'([^']+)'"
+          if ($src -notmatch $pattern) { throw 'No $script:OptVersion constant found in src\00-Header.ps1' }
+          $version = $Matches[1]
+          if ("v$version" -ne $tag) {
+            throw "Tag $tag does not match the version constant '$version'. Bump it in src\00-Header.ps1, rebuild, commit, then re-tag."
+          }
+          "Version $version matches tag $tag"
+
       # Build and test BEFORE publishing. Shipping a release whose script fails
       # its own rollback tests would be worse than shipping nothing.
       - name: Build

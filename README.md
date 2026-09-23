@@ -69,6 +69,8 @@ The one-liner downloads real files and then runs them — it is *deliberately no
 
 Requires **Windows PowerShell 5.1** (not PowerShell 7 — see [below](#why-windows-powershell-51)). Administrator rights are required; if you launch it unelevated it asks via a **UAC prompt** and continues in an elevated window. Pass `-NoElevate` to suppress the prompt and exit instead (for scripts and CI).
 
+On start it makes **one** HTTPS request to GitHub's releases API (5-second timeout) and tells you if a newer release exists. That is the only network access in the script: it never downloads or installs anything, sends nothing about your machine, and simply notes it and continues when offline. `-NoUpdateCheck` turns it off; `-Rollback` and `-ProfileFrom` never check.
+
 Always start here. It changes nothing and prints exactly what it would do:
 
 ```
@@ -154,6 +156,7 @@ Inbox-app removal (8.8) and OneDrive removal (8.9) are **report-only** in every 
 | `-AllowNetworkRestart` | Permit the single adapter restart that section 7.1 needs to take effect. Expect a brief link bounce. Refused inside a remote-desktop session. |
 | `-BitLockerAcknowledged` | Permit `bcdedit` changes while BitLocker is on — and only if a recovery-password protector is confirmed. Read the warning first. |
 | `-NoElevate` | When unelevated, print a message and exit 2 instead of showing a UAC prompt. |
+| `-NoUpdateCheck` | Skip the start-up release check (see [Quick start](#quick-start)). |
 | `-RemoveApps`, `-RemoveOneDrive`, `-NoReboot` | Accepted for compatibility with the original spec; **no effect in this build.** Sections 8.8 and 8.9 are report-only, and the script never reboots on its own. |
 
 Exit codes: `0` the run completed (individual tweaks that failed are reported as findings, not as a non-zero exit), `1` the run stopped on an unexpected error or was launched under PowerShell 7 (the manifest is still salvaged so `-Rollback` works), `2` refused by a safety gate — a virtual machine, or unelevated with `-NoElevate`.

@@ -35,6 +35,15 @@ function Invoke-OptMain {
         Write-OptBanner -State $State
         [void](Start-OptTranscript -State $State)
 
+        # --- release check ----------------------------------------------------
+        # Never for a rollback or a replayed profile: an undo must not depend
+        # on the network, and a replay is a test-injection path.
+        if (-not $State.Parameters['NoUpdateCheck'] -and
+            -not $State.Parameters['Rollback'] -and
+            -not $State.Parameters['ProfileFrom']) {
+            [void](Invoke-OptUpdateCheck -State $State -CurrentVersion ([string]$State['Version']))
+        }
+
         # --- phase 1: detection --------------------------------------------
         Write-OptLog -Level Info 'Detecting hardware and software profile...'
         [void](Initialize-OptInterop -State $State)
@@ -278,6 +287,7 @@ $OptParameters = @{
     Sections              = $Sections
     ExcludeSections       = $ExcludeSections
     AllowNetworkRestart   = [bool]$AllowNetworkRestart
+    NoUpdateCheck         = [bool]$NoUpdateCheck
 }
 
 # -ProfileFrom means the hardware was not probed, so mutating would be reckless.
@@ -286,6 +296,7 @@ if ($ProfileFrom) { $OptParameters['DryRun'] = $true }
 $script:Opt = New-OptState -Tier $Tier -Parameters $OptParameters
 # Real runs echo decisions to the console; the test suite leaves this off.
 $script:Opt['ConsoleDecisions'] = $true
+$script:Opt['Version'] = $script:OptVersion
 
 # ProgramData can be locked down by AV policy or a mangled ACL. Falling back to
 # TEMP keeps the run alive - and more importantly keeps the JOURNAL alive, since
