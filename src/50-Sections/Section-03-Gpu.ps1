@@ -219,13 +219,22 @@ function Invoke-OptSection33PerApp {
             if ($token -and $token -ne '~') { [void]$flags.Add($token) }
         }
     }
-    if ($flags -notcontains 'DISABLEDXMAXIMIZEDWINDOWEDMODE') {
-        [void]$flags.Add('DISABLEDXMAXIMIZEDWINDOWEDMODE')
-    }
 
-    Set-OptRegistryValue -State $State -Path $layersPath `
-        -Name $exe -Type String -Value ($flags -join ' ') `
-        -Section '3.3' -Tier 'Safe' -Title 'Disable fullscreen optimizations for cs2.exe' | Out-Null
+    # Decide on the token SET, never on the string. The Program Compatibility
+    # Assistant rewrites this value when the game launches and leaves a
+    # trailing space behind; a string compare re-applied this on every run and
+    # recorded a "change" whose only difference was that space.
+    if ($flags -contains 'DISABLEDXMAXIMIZEDWINDOWEDMODE') {
+        [void](Add-OptDecision -State $State -Id 'S-3.3-LAYERS' -Section '3.3' -Decision 'NoOp' `
+            -Title 'Disable fullscreen optimizations for cs2.exe' `
+            -Reason 'cs2.exe already carries DISABLEDXMAXIMIZEDWINDOWEDMODE in its compatibility flags')
+    }
+    else {
+        [void]$flags.Add('DISABLEDXMAXIMIZEDWINDOWEDMODE')
+        Set-OptRegistryValue -State $State -Path $layersPath `
+            -Name $exe -Type String -Value ($flags -join ' ') `
+            -Section '3.3' -Tier 'Safe' -Title 'Disable fullscreen optimizations for cs2.exe' | Out-Null
+    }
 
     # GpuPreference=2 routes CS2 to the high-performance adapter; AutoHDREnable=0
     # because Auto HDR adds latency and skews colours. On a single-GPU system the

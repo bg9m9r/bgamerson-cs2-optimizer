@@ -371,7 +371,7 @@ function Invoke-OptRollbackEntry {
             foreach ($id in $ids) {
                 try {
                     $nodes = Get-CimInstance -Namespace 'root\wmi' -ClassName 'MSPower_DeviceEnable' -ErrorAction Stop |
-                             Where-Object { $_.InstanceName -like "*$([string]$id -replace '\\','\\')*" }
+                             Where-Object { ([string]$_.InstanceName).StartsWith([string]$id, [StringComparison]::OrdinalIgnoreCase) }
                     foreach ($n in $nodes) {
                         Set-CimInstance -InputObject $n -Property @{ Enable = $true } -ErrorAction Stop
                         $restored++

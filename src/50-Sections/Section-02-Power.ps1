@@ -322,25 +322,35 @@ function Invoke-OptSection24DevicePower {
     }
 
     # NIC: clear "allow the computer to turn off this device to save power" on
-    # the adapter that actually carries the default route.
+    # the adapter that actually carries the default route. Read before and
+    # after: the cmdlet returns success on adapters whose driver never exposes
+    # the setting, and recording that as a change made every run re-apply it.
     $adapterName = [string]$p.Network.ActiveAdapterName
     if ($adapterName) {
-        $r = Invoke-OptCmdletChange -State $State -Description "Disable-NetAdapterPowerManagement $adapterName" -Action {
-            Disable-NetAdapterPowerManagement -Name $adapterName -ErrorAction Stop -Confirm:$false
+        $before = Get-OptNicPowerState -AdapterName $adapterName
+        if ($before -in @('Disabled', 'Unsupported')) {
+            [void](Add-OptDecision -State $State -Id 'S-2.4-NIC' -Section '2.4' -Decision 'NoOp' `
+                -Title 'NIC power management' `
+                -Reason $(if ($before -eq 'Disabled') { "power saving already disabled on $adapterName" } else { "$adapterName's driver does not expose the setting - nothing to change" }))
         }
-        if ($r.Success) {
-            $nicChange = New-OptChangeRecord -State $State -Type 'NetAdapterPowerMgmt' -Section '2.4' -Tier 'Safe' `
-                -Path $adapterName -Name 'AllowComputerToTurnOffDevice' `
-                -Target @{ AdapterName = $adapterName } `
-                -OldValue 'Enabled' -NewValue 'Disabled' -VerifyMode 'None'
-            if ($State.DryRun) { [void]$State.Changes.Add($nicChange) } else { [void](Add-OptChange -State $State -Change $nicChange) }
-        }
+        else {
+            $r = Invoke-OptCmdletChange -State $State -Description "Disable-NetAdapterPowerManagement $adapterName" -Action {
+                Disable-NetAdapterPowerManagement -Name $adapterName -ErrorAction Stop -Confirm:$false
+            }
+            $after = $null
+            if ($r.Success -and -not $State.DryRun) { $after = Get-OptNicPowerState -AdapterName $adapterName }
 
-        [void](Add-OptDecision -State $State -Id 'S-2.4-NIC' -Section '2.4' `
-            -Decision $(if ($r.Success) { 'Applied' } else { 'Failed' }) `
-            -Title 'NIC power management' `
-            -Severity $(if ($r.Success) { 'Info' } else { 'Warning' }) `
-            -Reason $(if ($r.Success) { "power saving disabled on $adapterName" } else { [string]$r.Error }))
+            $outcome = Resolve-OptDevicePowerOutcome -Before $before -After $after -Success $r.Success -DryRun $State.DryRun -ErrorText ([string]$r.Error)
+            if ($outcome.Record) {
+                $nicChange = New-OptChangeRecord -State $State -Type 'NetAdapterPowerMgmt' -Section '2.4' -Tier 'Safe' `
+                    -Path $adapterName -Name 'AllowComputerToTurnOffDevice' `
+                    -Target @{ AdapterName = $adapterName } `
+                    -OldValue $(if ($before) { $before } else { 'Enabled' }) -NewValue 'Disabled' -VerifyMode 'None'
+                if ($State.DryRun) { [void]$State.Changes.Add($nicChange) } else { [void](Add-OptChange -State $State -Change $nicChange) }
+            }
+            [void](Add-OptDecision -State $State -Id 'S-2.4-NIC' -Section '2.4' -Decision $outcome.Decision `
+                -Title 'NIC power management' -Severity $outcome.Severity -Reason ($outcome.Reason -f $adapterName))
+        }
     }
 
     # USB endpoints. The set is DERIVED from the detected profile rather than a
@@ -369,32 +379,156 @@ function Invoke-OptSection24DevicePower {
             -Reason "USB audio device detected ($($p.Audio.DefaultName)) - included in the USB power-management sweep")
     }
 
-    $done = 0
-    foreach ($dev in $targets) {
-        $instance = [string]$dev.InstanceId
-        $r = Invoke-OptCmdletChange -State $State -Description "disable USB power saving for $instance" -Action {
-            $node = Get-CimInstance -Namespace 'root\wmi' -ClassName 'MSPower_DeviceEnable' -ErrorAction Stop |
-                    Where-Object { $_.InstanceName -like "*$($instance -replace '\\','\\')*" }
-            foreach ($n in $node) {
-                if ($n.Enable) { Set-CimInstance -InputObject $n -Property @{ Enable = $false } -ErrorAction Stop }
-            }
-        }
-        if ($r.Success) { $done++ }
-    }
+    $ids = @($targets | ForEach-Object { [string]$_.InstanceId } | Select-Object -Unique)
+    $sweep = Invoke-OptUsbPowerSweep -State $State -InstanceIds $ids
 
-    if ($done -gt 0 -or $State.DryRun) {
-        # Recorded as a single bulk entry with an explicit endpoint list, so the
-        # sweep is not an unrecorded mutation. Reversible='Partial' is honest:
-        # rollback re-enables power management on the endpoints still present,
-        # and silently skips any device that has since been unplugged.
+    $changed = @($sweep.Changed).Count
+    $off     = @($sweep.AlreadyOff).Count
+    $refused = @($sweep.Refused).Count
+    $failed  = @($sweep.Failed).Count
+
+    if ($changed -gt 0) {
+        # Recorded as a single bulk entry listing ONLY the endpoints that
+        # actually changed, so the sweep is neither an unrecorded mutation nor
+        # a recorded no-op. Reversible='Partial' is honest: rollback re-enables
+        # power management on the endpoints still present and silently skips
+        # any device that has since been unplugged.
         $usbChange = New-OptChangeRecord -State $State -Type 'UsbPowerMgmt' -Section '2.4' -Tier 'Safe' `
             -Path 'MSPower_DeviceEnable' -Name 'UsbEndpoints' `
-            -Target @{ InstanceIds = @($targets | ForEach-Object { [string]$_.InstanceId }) } `
+            -Target @{ InstanceIds = @($sweep.Changed) } `
             -OldValue $true -NewValue $false -Reversible 'Partial' -VerifyMode 'None'
         if ($State.DryRun) { [void]$State.Changes.Add($usbChange) } else { [void](Add-OptChange -State $State -Change $usbChange) }
     }
 
-    [void](Add-OptDecision -State $State -Id 'S-2.4-USB' -Section '2.4' -Decision 'Applied' `
-        -Title 'USB device power management' `
-        -Reason "processed $done input/audio USB endpoint(s) derived from the detected profile")
+    $refusedNote = if ($refused -gt 0) {
+        "; $refused refused - the driver reported the setting still enabled right after the write. Composite devices (a mouse or DAC exposing several USB interfaces) commonly accept it only on the parent device; Device Manager shows the same"
+    } else { '' }
+    $failedNote = if ($failed -gt 0) { "; $failed failed (see log)" } else { '' }
+
+    if ($State.DryRun) {
+        [void](Add-OptDecision -State $State -Id 'S-2.4-USB' -Section '2.4' -Decision 'Applied' `
+            -Title 'USB device power management' `
+            -Reason "would disable power saving on $changed of $($ids.Count) USB endpoint(s); $off already off")
+    }
+    elseif ($changed -gt 0 -and $refused -eq 0 -and $failed -eq 0) {
+        [void](Add-OptDecision -State $State -Id 'S-2.4-USB' -Section '2.4' -Decision 'Applied' `
+            -Title 'USB device power management' `
+            -Reason "power saving disabled on $changed USB endpoint(s); $off already off")
+    }
+    elseif ($changed -gt 0 -or $refused -gt 0 -or $failed -gt 0) {
+        [void](Add-OptDecision -State $State -Id 'S-2.4-USB' -Section '2.4' -Decision 'Unverified' `
+            -Title 'USB device power management' -Severity 'Warning' `
+            -Reason "power saving disabled on $changed USB endpoint(s); $off already off$refusedNote$failedNote")
+    }
+    else {
+        [void](Add-OptDecision -State $State -Id 'S-2.4-USB' -Section '2.4' -Decision 'NoOp' `
+            -Title 'USB device power management' `
+            -Reason "all $off detected USB endpoint(s) already have power saving off")
+    }
+}
+
+function Get-OptNicPowerState {
+    <#
+        'Enabled' / 'Disabled' / 'Unsupported' as the adapter's driver reports
+        it, or $null when the query itself fails.
+    #>
+    [CmdletBinding()][OutputType([string])]
+    param([Parameter(Mandatory)][string]$AdapterName)
+    try {
+        $pm = Get-NetAdapterPowerManagement -Name $AdapterName -ErrorAction Stop
+        $v = [string]$pm.AllowComputerToTurnOffDevice
+        if ($v) { return $v }
+        return $null
+    }
+    catch { return $null }
+}
+
+function Resolve-OptDevicePowerOutcome {
+    <#
+        Turns a before/after read around a "disable" command into a decision.
+        Pure, so the honesty rules are testable: a change is recorded only when
+        the after-state confirms it (or cannot be read at all, where recording
+        keeps rollback able to re-enable), never merely because the command
+        returned success. '{0}' in Reason is the adapter name.
+    #>
+    [CmdletBinding()][OutputType([hashtable])]
+    param(
+        [AllowNull()][string]$Before,
+        [AllowNull()][string]$After,
+        [bool]$Success,
+        [bool]$DryRun,
+        [AllowNull()][AllowEmptyString()][string]$ErrorText
+    )
+
+    $was = if ($Before) { $Before } else { 'unknown' }
+    if (-not $Success -and -not $DryRun) {
+        return @{ Record = $false; Decision = 'Failed'; Severity = 'Warning'; Reason = "could not disable power saving on {0}: $ErrorText" }
+    }
+    if ($DryRun) {
+        return @{ Record = $true; Decision = 'Applied'; Severity = 'Info'; Reason = "would disable power saving on {0} (currently $was)" }
+    }
+    if ($After -eq 'Disabled') {
+        return @{ Record = $true; Decision = 'Applied'; Severity = 'Info'; Reason = "power saving disabled on {0} (was $was)" }
+    }
+    if (-not $After) {
+        return @{ Record = $true; Decision = 'Unverified'; Severity = 'Warning'; Reason = "the disable command succeeded on {0} but the state could not be read back; recorded so -Rollback can re-enable it" }
+    }
+    return @{ Record = $false; Decision = 'Unverified'; Severity = 'Warning'; Reason = "the disable command succeeded but {0} still reports '$After' - the driver did not accept the setting; nothing recorded" }
+}
+
+function Invoke-OptUsbPowerSweep {
+    <#
+        Disables "allow the computer to turn off this device" on each USB
+        endpoint, reading the WMI node before and after so the result says
+        what actually happened: Changed (confirmed off), AlreadyOff, Refused
+        (write succeeded, driver still reports enabled), Missing (no WMI node
+        for that instance), Failed (the write threw).
+
+        Matching is by prefix on the PnP instance id: MSPower_DeviceEnable
+        names an endpoint as '<InstanceId>_0'. The node lookup and the write
+        are injectable so the sweep is testable without hardware.
+    #>
+    [CmdletBinding()][OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$State,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$InstanceIds,
+        [scriptblock]$GetNodes = {
+            param($id)
+            @(Get-CimInstance -Namespace 'root\wmi' -ClassName 'MSPower_DeviceEnable' -ErrorAction Stop |
+              Where-Object { ([string]$_.InstanceName).StartsWith($id, [StringComparison]::OrdinalIgnoreCase) })
+        },
+        [scriptblock]$DisableNode = {
+            param($n)
+            Set-CimInstance -InputObject $n -Property @{ Enable = $false } -ErrorAction Stop
+        }
+    )
+
+    $result = @{
+        Changed = New-Object System.Collections.ArrayList; AlreadyOff = New-Object System.Collections.ArrayList
+        Refused = New-Object System.Collections.ArrayList; Missing    = New-Object System.Collections.ArrayList
+        Failed  = New-Object System.Collections.ArrayList
+    }
+
+    foreach ($id in $InstanceIds) {
+        $nodes = @()
+        try { $nodes = @(& $GetNodes $id) } catch { $nodes = @() }
+        if ($nodes.Count -eq 0) { [void]$result.Missing.Add($id); continue }
+
+        $needs = @($nodes | Where-Object { $_.Enable })
+        if ($needs.Count -eq 0) { [void]$result.AlreadyOff.Add($id); continue }
+
+        if ($State.DryRun) { [void]$result.Changed.Add($id); continue }
+
+        $r = Invoke-OptCmdletChange -State $State -Description "disable USB power saving for $id" -Action {
+            foreach ($n in $needs) { & $DisableNode $n }
+        }
+        if (-not $r.Success) { [void]$result.Failed.Add($id); continue }
+
+        $check = @()
+        try { $check = @(& $GetNodes $id) } catch { $check = @() }
+        if (@($check | Where-Object { $_.Enable }).Count -gt 0) { [void]$result.Refused.Add($id) }
+        else { [void]$result.Changed.Add($id) }
+    }
+
+    return $result
 }

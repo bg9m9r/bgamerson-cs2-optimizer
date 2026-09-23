@@ -569,6 +569,82 @@ Describe 'Report auto-open' {
     }
 }
 
+Describe 'Section 3.3 - compatibility flags are idempotent' {
+    # The Program Compatibility Assistant rewrites the Layers value with a
+    # trailing space when the game launches. That must not read as drift.
+
+    BeforeEach {
+        $script:state = New-Cs2OptTestState -Tier 'Safe' -PathsRoot (Join-Path $TestDrive "l33-$([guid]::NewGuid())")
+        $script:state.Profile = New-Cs2OptTestProfile @{}
+        $script:exe = [string]$script:state.Profile.Games.Cs2ExePath
+        $script:layers = "HKCU:\$($script:state['SandboxRoot'])\HKCU\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"
+        New-Item -Path $script:layers -Force | Out-Null
+    }
+    AfterEach { Remove-Cs2OptTestState -State $script:state }
+
+    It 'records nothing when the flag is already present, even with PCA''s trailing space' {
+        New-ItemProperty -Path $script:layers -Name $script:exe -Value '~ HIGHDPIAWARE DISABLEDXMAXIMIZEDWINDOWEDMODE ' -PropertyType String -Force | Out-Null
+        Invoke-OptSection33PerApp -State $script:state
+        @($script:state.Changes | Where-Object { $_.Path -like '*Layers*' }).Count | Should -Be 0
+        @($script:state.Decisions | Where-Object { $_.Id -eq 'S-3.3-LAYERS' })[0].Decision | Should -Be 'NoOp'
+        # Untouched, trailing space and all.
+        (Get-ItemProperty -LiteralPath $script:layers).PSObject.Properties[$script:exe].Value | Should -Be '~ HIGHDPIAWARE DISABLEDXMAXIMIZEDWINDOWEDMODE '
+    }
+
+    It 'merges the flag into existing flags rather than replacing them' {
+        New-ItemProperty -Path $script:layers -Name $script:exe -Value '~ HIGHDPIAWARE' -PropertyType String -Force | Out-Null
+        Invoke-OptSection33PerApp -State $script:state
+        @($script:state.Changes | Where-Object { $_.Path -like '*Layers*' }).Count | Should -Be 1
+        (Get-ItemProperty -LiteralPath $script:layers).PSObject.Properties[$script:exe].Value | Should -Be '~ HIGHDPIAWARE DISABLEDXMAXIMIZEDWINDOWEDMODE'
+    }
+}
+
+Describe 'Section 2.4 - device power management reports what actually happened' {
+
+    It 'records the NIC change only when the after-state confirms it' {
+        (Resolve-OptDevicePowerOutcome -Before 'Enabled' -After 'Disabled' -Success $true -DryRun $false).Record   | Should -BeTrue
+        (Resolve-OptDevicePowerOutcome -Before 'Enabled' -After 'Disabled' -Success $true -DryRun $false).Decision | Should -Be 'Applied'
+
+        $stuck = Resolve-OptDevicePowerOutcome -Before 'Enabled' -After 'Enabled' -Success $true -DryRun $false
+        $stuck.Record   | Should -BeFalse
+        $stuck.Decision | Should -Be 'Unverified'
+
+        $blind = Resolve-OptDevicePowerOutcome -Before $null -After $null -Success $true -DryRun $false
+        $blind.Record   | Should -BeTrue -Because 'rollback must still be able to re-enable it'
+        $blind.Decision | Should -Be 'Unverified'
+
+        (Resolve-OptDevicePowerOutcome -Before 'Enabled' -After $null -Success $false -DryRun $false -ErrorText 'boom').Decision | Should -Be 'Failed'
+        (Resolve-OptDevicePowerOutcome -Before 'Enabled' -After $null -Success $true -DryRun $true).Decision | Should -Be 'Applied'
+    }
+
+    It 'classifies USB endpoints as changed, already off, refused or missing from real reads' {
+        $state = New-Cs2OptTestState -Tier 'Safe' -PathsRoot (Join-Path $TestDrive "usb-$([guid]::NewGuid())")
+        try {
+            # Fake WMI nodes: 'accept' flips when written, 'stubborn' ignores the write.
+            $nodes = @{
+                'USB\ACCEPT\1'   = [pscustomobject]@{ InstanceName = 'USB\ACCEPT\1_0';   Enable = $true }
+                'USB\STUBBORN\1' = [pscustomobject]@{ InstanceName = 'USB\STUBBORN\1_0'; Enable = $true }
+                'USB\OFF\1'      = [pscustomobject]@{ InstanceName = 'USB\OFF\1_0';      Enable = $false }
+            }
+            $get = { param($id) if ($nodes.ContainsKey($id)) { @($nodes[$id]) } else { @() } }.GetNewClosure()
+            $set = { param($n) if ($n.InstanceName -like 'USB\ACCEPT*') { $n.Enable = $false } }
+
+            $r = Invoke-OptUsbPowerSweep -State $state -InstanceIds @('USB\ACCEPT\1', 'USB\STUBBORN\1', 'USB\OFF\1', 'USB\GONE\1') -GetNodes $get -DisableNode $set
+            @($r.Changed)    | Should -Be @('USB\ACCEPT\1')
+            @($r.Refused)    | Should -Be @('USB\STUBBORN\1')
+            @($r.AlreadyOff) | Should -Be @('USB\OFF\1')
+            @($r.Missing)    | Should -Be @('USB\GONE\1')
+            @($r.Failed).Count | Should -Be 0
+
+            # A second sweep is a no-op for the endpoint that accepted.
+            $r2 = Invoke-OptUsbPowerSweep -State $state -InstanceIds @('USB\ACCEPT\1') -GetNodes $get -DisableNode $set
+            @($r2.AlreadyOff) | Should -Be @('USB\ACCEPT\1')
+            @($r2.Changed).Count | Should -Be 0
+        }
+        finally { Remove-Cs2OptTestState -State $state }
+    }
+}
+
 Describe 'No-unrecorded-mutation invariant' {
 
     It 'records every value it changed, and changes nothing it did not record' {
