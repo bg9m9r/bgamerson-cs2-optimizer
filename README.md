@@ -40,9 +40,10 @@ Concretely, that means it will:
 - keep SysMain enabled if it finds a spinning disk, because prefetch genuinely helps there
 - skip a NIC keyword the driver doesn't expose (and say so) rather than failing the whole block
 - report "not present, nothing to disable" for Recall on a machine with no NPU, instead of writing a policy key and claiming a win
-- detect and **revert** known-harmful tweaks other scripts leave behind — `hypervisorlaunchtype off`, disabled TCP auto-tuning, a disabled pagefile, a disabled `ScheduledDefrag`
+- raise a **critical finding** on a dual-CCD X3D processor that is missing AMD's 3D V-Cache driver — the actual cause of the stutter people try to tweak away — instead of touching the scheduler
+- detect and **revert** known-harmful tweaks other scripts leave behind — `hypervisorlaunchtype off`, disabled TCP auto-tuning, a disabled pagefile, a disabled `ScheduledDefrag` — and flag resident timer-resolution utilities, which are an anti-cheat risk
 
-It is also honest about what it can't do. Sections that aren't safely scriptable — AMD Adrenalin, the NVIDIA profile store, Steam launch options, BIOS — are emitted as checklists **generated from your detected hardware**, with your actual resolution, refresh rate and audio device substituted in.
+It is also honest about what it can't do. Sections that aren't safely scriptable — AMD Adrenalin, the NVIDIA profile store, Steam launch options, BIOS — are emitted as checklists **generated from your detected hardware**, with your actual resolution, refresh rate and audio device substituted in. The Steam checklist reads the launch options you *actually* have and flags the ones that contradict the advice (`-high`, `-threads`, a cap below your panel's refresh rate).
 
 ---
 
@@ -123,11 +124,15 @@ Cumulative — `Aggressive` includes `Safe`, `Experimental` includes both.
 
 | Tier | Contains |
 |---|---|
-| `Safe` | power plan, Fast Startup, filesystem, pagefile, refresh-rate enforcement, GameDVR/Game Mode, mouse acceleration, accessibility hotkeys, TCP stack |
-| `Aggressive` *(default)* | + MMCSS, priority separation, IFEO process priority, NIC advanced properties, UDP receive offload (URO) off, scheduled tasks, telemetry, shell surfaces, Defender exclusions |
-| `Experimental` | + MPO disable, MMAgent, SysMain, device queue sizes, Nagle, NIC interrupt affinity to core 0, DiagTrack |
+| `Safe` | power plan and power-scheme values, device power management (NIC, USB), Fast Startup, `bcdedit` timer cleanup (removal only), filesystem, pagefile, refresh-rate enforcement, GameDVR/Game Mode, CS2 per-app flags, mouse acceleration, accessibility hotkeys, TCP stack |
+| `Aggressive` *(default)* | + MMCSS, priority separation, IFEO process priority, NIC advanced properties, UDP receive offload (URO) off, NVIDIA telemetry, scheduled tasks, background apps, telemetry and ETW loggers, AI/Copilot surfaces, shell surfaces, visual effects, Defender exclusions |
+| `Experimental` | + MMAgent, SysMain, device queue sizes, Nagle, NIC interrupt affinity to core 0, `GlobalTimerResolutionRequests`, DiagTrack, MPO disable (see below) |
 
-`Experimental` items are the ones with a plausible "the machine feels worse" outcome. Apply them **one per reboot** — bundling them makes attribution impossible.
+`Experimental` items are the ones with a plausible "the machine feels worse" outcome. Apply them **one per reboot** — bundling them makes attribution impossible. `-Rollback` undoes a whole run, not one item, so a bundled run can only be undone as a bundle.
+
+MPO disable (3.2) goes one step further: it never applies from `-Tier Experimental` alone, because flicker can't be detected in software. It needs an explicit `-Tier Experimental -Sections 3.2`.
+
+Inbox-app removal (8.8) and OneDrive removal (8.9) are **report-only** in every tier: the report lists the candidates, nothing is removed.
 
 ---
 
@@ -137,18 +142,23 @@ Cumulative — `Aggressive` includes `Safe`, `Experimental` includes both.
 |---|---|
 | `-DryRun` | Runs the full pipeline with mutation disabled and emits the complete manifest of what *would* change. Deliberately goes further than a detection-only preview: detection is the part that's already safe. |
 | `-Tier <t>` | `Safe` / `Aggressive` / `Experimental`. Default `Aggressive`. |
-| `-Sections 7` | Run only these sections. Prefix matching, so `8` covers `8.1`–`8.9`. Built for staged validation. |
-| `-ExcludeSections 5.4` | Skip these. |
+| `-Sections 7` | Run only these sections. Prefix matching, so `8` covers `8.1`–`8.9`; a comma list works too (`-Sections 7.4,7.5`). Built for staged validation. |
+| `-ExcludeSections 5.4` | Skip these. Same matching rules. |
 | `-Rollback` | Replay the last manifest in reverse. |
 | `-VerifyOnly` | Re-verify the last manifest without applying anything — how reboot-deferred changes get a real result. |
 | `-SkipRecovery` | Skip the restore point and `.reg` exports. **The manifest and journal are still written, so `-Rollback` still works.** |
+| `-SkipRestorePoint` | Skip only the restore point (`-SkipRecovery` implies it). |
+| `-ManifestPath <path>` | Where the "latest run" manifest pointer lives. Default `%ProgramData%\cs2-opt\manifest.json`. |
 | `-CaptureProfile <path>` | Dump the detected profile to JSON and exit. Attach it to bug reports; it doubles as a test fixture. |
 | `-ProfileFrom <path>` | Load a captured profile instead of probing hardware. Implies `-DryRun`. |
-| `-AllowNetworkRestart` | Permit the single adapter restart that section 7.1 needs to take effect. Expect a brief link bounce. |
-| `-BitLockerAcknowledged` | Permit `bcdedit` changes while BitLocker is on. Read the warning first. |
+| `-AllowNetworkRestart` | Permit the single adapter restart that section 7.1 needs to take effect. Expect a brief link bounce. Refused inside a remote-desktop session. |
+| `-BitLockerAcknowledged` | Permit `bcdedit` changes while BitLocker is on — and only if a recovery-password protector is confirmed. Read the warning first. |
 | `-NoElevate` | When unelevated, print a message and exit 2 instead of showing a UAC prompt. |
+| `-RemoveApps`, `-RemoveOneDrive`, `-NoReboot` | Accepted for compatibility with the original spec; **no effect in this build.** Sections 8.8 and 8.9 are report-only, and the script never reboots on its own. |
 
-Everything lands in `%ProgramData%\cs2-opt\`: `logs\`, `backup\`, `runs\<timestamp>\` (manifest, journal, markdown report), and `manifest.json` pointing at the latest run.
+Exit codes: `0` the run completed (individual tweaks that failed are reported as findings, not as a non-zero exit), `1` the run stopped on an unexpected error or was launched under PowerShell 7 (the manifest is still salvaged so `-Rollback` works), `2` refused by a safety gate — a virtual machine, or unelevated with `-NoElevate`.
+
+Everything lands in `%ProgramData%\cs2-opt\` (falling back to `%TEMP%\cs2-opt\` if that isn't writable): `logs\`, `backup\<timestamp>\` (`.reg` exports, unless skipped), `runs\<timestamp>\` (`manifest.json`, `changes.jsonl` journal, `report.md`), and `manifest.json` pointing at the latest run.
 
 ---
 
@@ -168,7 +178,7 @@ Everything lands in `%ProgramData%\cs2-opt\`: `logs\`, `backup\`, `runs\<timesta
 
 ## Why VBS stays on
 
-FACEIT requires VBS in order to support IOMMU, which is the mechanism that neutralizes DMA-card cheats. TPM 2.0 and Secure Boot became mandatory for all players on 25 November 2025; IOMMU and VBS have been enforced in expanding waves since April 2025.
+FACEIT requires VBS in order to support IOMMU, which is the mechanism that neutralizes DMA-card cheats. TPM 2.0 and Secure Boot became mandatory for all players on 25 November 2025; IOMMU and VBS have been enforced in expanding waves since April 2025; and Windows 11 itself is required from **14 October 2026** — a Windows 10 machine with FACEIT AC installed gets a critical finding saying exactly that.
 
 So on a FACEIT machine, "VBS is not running" is a **blocking problem to fix**, not a tweak that succeeded. The script reports it as a critical finding with the remediation path, and will never write the DeviceGuard disable keys or emit `bcdedit /set hypervisorlaunchtype off`.
 
@@ -221,7 +231,7 @@ Save-Module -Name Pester -MinimumVersion 5.0.0 -Path .\tools\Modules
 
 Deliberately repo-local rather than `-Scope CurrentUser`, which lands in a OneDrive-redirected `Documents` tree on many machines.
 
-The suite covers the gating matrix against synthetic hardware profiles (Intel hybrid, NVIDIA, laptop, HDD, wireless, BitLocker, domain-joined, VM, 8 GB) with no real hardware, plus the two tests that matter most:
+Four suites: the gating matrix against synthetic hardware profiles (Intel hybrid, NVIDIA, laptop, HDD, wireless, BitLocker, domain-joined, VM, 8 GB, dual-CCD X3D) with no real hardware; the engine (registry chokepoint, rollback, `netsh` and VDF parsers against captured fixtures, the network sections in a sandbox); `dist/` freshness; and the launcher's affinity math and retry loop (driven against the test host and the Idle process, never a game). Two tests matter most:
 
 - **No unrecorded mutations** — diffs a sandbox registry subtree before and after, and asserts the change set equals the manifest *in both directions*. A round-trip test can never catch "applied but not recorded", because it only replays what was recorded.
 - **Rollback round-trip from a re-read file** — never the in-memory object, because most bugs in this class are serialization bugs (`byte[]` → int array, DWORD sign, absent vs empty string).
@@ -241,11 +251,16 @@ Run it from an **elevated** shell (the capture needs admin rights). If a capture
 ## Layout
 
 ```
-build/    Build-Script.ps1, build.psd1 (ordered file list), analyzer settings
-src/      00-Header, 10-Core, 20-Interop, 30-Detect, 40-Gates, 50-Sections, 60-Report, 90-Main
-tests/    Pester suites + captured profile and command-output fixtures
-dist/     the built single-file script and its .cmd launcher
+build/     Build-Script.ps1, build.psd1 (ordered file list), analyzer settings
+src/       00-Header, 10-Core, 20-Interop, 30-Detect, 40-Gates, 50-Sections, 60-Report, 90-Main
+launcher/  Launch-CS2.ps1 (standalone; copied to dist by the build)
+tests/     Pester suites + captured profile and command-output fixtures, Update-Fixture.ps1
+tools/     repo-local Pester (not committed; see Tests)
+dist/      Optimize-CS2.ps1 + Run-Optimize-CS2.cmd, Launch-CS2.ps1 + Launch-CS2.cmd
+.github/   CI (build + test on every push) and the tag-triggered release workflow
 ```
+
+Releases are cut by pushing a `v*` tag: CI rebuilds from source, runs the full suite, and only then publishes the zip and the four loose files.
 
 ---
 

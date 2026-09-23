@@ -343,6 +343,13 @@ Describe 'Section gating' {
         Test-OptSectionMatch -Section '7.1' -Patterns @('7')   | Should -BeTrue
     }
 
+    It 'accepts a comma-separated list arriving as one string (the .cmd / -File path)' {
+        Test-OptSectionMatch -Section '7.4' -Patterns @('7.4,7.5') | Should -BeTrue
+        Test-OptSectionMatch -Section '7.5' -Patterns @('7.4,7.5') | Should -BeTrue
+        Test-OptSectionMatch -Section '7.3' -Patterns @('7.4,7.5') | Should -BeFalse
+        Test-OptSectionMatch -Section '5.4.2' -Patterns @('7.4, 5.4') | Should -BeTrue
+    }
+
     It 'treats -Sections as an allow-list' {
         $state = New-OptState -Tier 'Aggressive' -Parameters @{ Sections = @('7') }
         Test-OptSectionEnabled -State $state -Section '7.1' | Should -BeTrue

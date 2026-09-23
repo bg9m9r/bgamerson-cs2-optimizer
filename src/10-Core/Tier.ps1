@@ -89,7 +89,12 @@ function Test-OptSectionMatch {
         [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Patterns
     )
 
-    foreach ($pat in $Patterns) {
+    # Through the .cmd wrapper the arguments reach powershell.exe -File, where
+    # '7.4,7.5' is ONE string, not an array - so a comma list is split here,
+    # at the point of use, and behaves the same from every entry point.
+    $expanded = @($Patterns | ForEach-Object { [string]$_ -split '[,;]' })
+
+    foreach ($pat in $expanded) {
         if ([string]::IsNullOrWhiteSpace($pat)) { continue }
 
         # Strip any leading non-digit prefix so '7', 'S7', 's7' and the section
