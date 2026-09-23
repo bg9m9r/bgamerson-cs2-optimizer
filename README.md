@@ -1,5 +1,9 @@
 # bgamerson-cs2-optimizer
 
+[![CI](https://github.com/bg9m9r/bgamerson-cs2-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/bg9m9r/bgamerson-cs2-optimizer/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/bg9m9r/bgamerson-cs2-optimizer?label=release)](https://github.com/bg9m9r/bgamerson-cs2-optimizer/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A one-shot, idempotent, **detection-driven** Windows 11 optimizer for competitive CS2 on FACEIT.
 
 No background daemon. No scheduled task. No resident tweaker process. It runs once, records everything it did, and can undo all of it.
@@ -24,6 +28,22 @@ Happy with the report? Apply the conservative tier, then reboot:
 
 > **It will not disable Secure Boot, TPM, VBS, IOMMU or Memory Integrity.**
 > On a machine with FACEIT Anti-Cheat installed those are *dependencies*, not optimization targets. Most CS2 optimization guides get this backwards. See [Why VBS stays on](#why-vbs-stays-on).
+
+---
+
+## Should you trust a script that runs as admin?
+
+Not on my say-so. Every claim below is something you can check yourself:
+
+- **Every release is built in public CI from the tagged source and carries a signed build attestation.** With the [GitHub CLI](https://cli.github.com/), `gh attestation verify .\Optimize-CS2.ps1 --repo bg9m9r/bgamerson-cs2-optimizer` proves the file you downloaded is byte-identical to what the [release workflow](.github/workflows/release.yml) produced from that commit. The SHA256 is also in every release's notes.
+- **One network request, ever.** A single HTTPS `GET` to GitHub's releases API at start-up to compare versions; nothing is downloaded or sent, and `-NoUpdateCheck` disables it. Search the source for `Invoke-RestMethod` — there is one call.
+- **No `irm | iex`, no obfuscation, one readable file.** The one-liner above downloads real files into your Downloads folder; `dist/Optimize-CS2.ps1` in the repo is that exact file, and a test fails the build if it drifts from `src/`.
+- **Every mutation goes through three chokepoint files**, enforced by a build gate that fails if any other file calls a native tool. `-DryRun` runs the full pipeline with those chokepoints disabled and writes the complete manifest of what would change.
+- **Everything it does is recorded and reversible.** `-Rollback` restores original values and types in reverse order. A setting that was already correct is never recorded, so rollback can't "restore" a state your machine was never in.
+- **120 tests run on every push**, including one that diffs a sandbox registry before and after a run and asserts the change set equals the manifest in both directions.
+- **Each release's notes link to VirusTotal reports** for the published files. Read the caveat in [SECURITY.md](SECURITY.md): section 9 adds Defender *exclusions* (not a disable), which a few heuristic engines flag on any script.
+
+What it never does — disable security features, remove apps, install or persist anything, set game affinity — is listed in [SECURITY.md](SECURITY.md), along with how to report a problem.
 
 ---
 

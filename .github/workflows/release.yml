@@ -16,6 +16,10 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      # Signed build provenance for every published file (verify with
+      # `gh attestation verify <file> --repo bg9m9r/bgamerson-cs2-optimizer`).
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@v4
@@ -78,17 +82,80 @@ jobs:
           if (Test-Path LICENSE) { Copy-Item LICENSE -Destination $staging }
           Compress-Archive -Path "$staging\*" -DestinationPath $zip -Force
 
+          "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "zip=$zip" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # VirusTotal is queried directly rather than through a marketplace
+      # action: a release created with the workflow token never fires the
+      # `release` event, so release-triggered scanners cannot see it. The
+      # report URL is deterministic (/gui/file/<sha256>), so the links can go
+      # into the notes before the release exists. Skipped, with a note in the
+      # release body, when the VT_API_KEY secret is not configured.
+      - name: Upload the release files to VirusTotal
+        id: vt
+        shell: powershell
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: |
+          # curl reports HTTP failures on stderr; under the runner's default
+          # ErrorActionPreference=Stop that would abort the step instead of
+          # producing a "upload failed" line in the notes.
+          $ErrorActionPreference = 'Continue'
+          $files = @('dist\Optimize-CS2.ps1', 'dist\Run-Optimize-CS2.cmd', 'dist\Launch-CS2.ps1', 'dist\Launch-CS2.cmd', '${{ steps.pack.outputs.zip }}')
+          $lines = New-Object System.Collections.ArrayList
+          if (-not $env:VT_API_KEY) {
+            [void]$lines.Add('_Not scanned: the VT_API_KEY secret is not configured for this repository._')
+          }
+          else {
+            $n = 0
+            foreach ($f in $files) {
+              $sha = (Get-FileHash $f -Algorithm SHA256).Hash.ToLowerInvariant()
+              # Free tier is 4 requests/minute.
+              if ($n -gt 0) { Start-Sleep -Seconds 16 }
+              $n++
+              $resp = & curl.exe --silent --show-error --fail-with-body --request POST `
+                --url 'https://www.virustotal.com/api/v3/files' `
+                --header "x-apikey: $env:VT_API_KEY" --header 'accept: application/json' `
+                --form "file=@$f"
+              $ok = ($LASTEXITCODE -eq 0)
+              $name = Split-Path -Leaf $f
+              if ($ok) { [void]$lines.Add("- [$name](https://www.virustotal.com/gui/file/$sha) (SHA256 ``$sha``)") }
+              else     { [void]$lines.Add("- $name (SHA256 ``$sha``): upload failed - $resp") }
+            }
+          }
+          $vtFile = Join-Path $env:RUNNER_TEMP 'vt.md'
+          [System.IO.File]::WriteAllText($vtFile, ($lines -join "`n"), (New-Object System.Text.UTF8Encoding $false))
+          "vtFile=$vtFile" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # Release notes live in .github/release-notes.md with {{ZIP}}, {{SHA}}
+      # and {{VIRUSTOTAL}} placeholders, rather than a here-string embedded in
+      # this YAML - an unindented here-string line silently terminates a YAML
+      # block scalar.
+      - name: Render release notes
+        id: notes
+        shell: powershell
+        run: |
           $sha = (Get-FileHash dist\Optimize-CS2.ps1 -Algorithm SHA256).Hash
+          $vt = Get-Content '${{ steps.vt.outputs.vtFile }}' -Raw
           $notes = Get-Content .github\release-notes.md -Raw
-          $notes = $notes.Replace('{{ZIP}}', $zip).Replace('{{SHA}}', $sha)
+          $notes = $notes.Replace('{{ZIP}}', '${{ steps.pack.outputs.zip }}').Replace('{{SHA}}', $sha).Replace('{{VIRUSTOTAL}}', $vt.Trim())
           $notesFile = Join-Path $env:RUNNER_TEMP 'notes.md'
           # Set-Content -Encoding UTF8 under 5.1 writes a BOM, and gh passes it
           # through into the release body as a stray invisible character.
           [System.IO.File]::WriteAllText($notesFile, $notes, (New-Object System.Text.UTF8Encoding $false))
-
-          "tag=$tag"             | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "zip=$zip"             | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
           "notesFile=$notesFile" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # Before publishing, so a failed attestation fails the release rather
+      # than leaving an unverifiable one up.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/Optimize-CS2.ps1
+            dist/Run-Optimize-CS2.cmd
+            dist/Launch-CS2.ps1
+            dist/Launch-CS2.cmd
+            ${{ steps.pack.outputs.zip }}
 
       - name: Create release
         shell: powershell
@@ -102,4 +169,4 @@ jobs:
           "dist/Launch-CS2.ps1"
           "dist/Launch-CS2.cmd"
           --title "${{ steps.pack.outputs.tag }}"
-          --notes-file "${{ steps.pack.outputs.notesFile }}"
+          --notes-file "${{ steps.notes.outputs.notesFile }}"

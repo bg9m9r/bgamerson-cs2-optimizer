@@ -37,8 +37,20 @@ Reboot, then `Run-Optimize-CS2.cmd -VerifyOnly` to resolve the checks that only 
 
 ### Verify your download
 
+Every file in this release was built by the public release workflow from the tagged commit and carries a signed build attestation. With the [GitHub CLI](https://cli.github.com/):
+
+```powershell
+gh attestation verify .\Optimize-CS2.ps1 --repo bg9m9r/bgamerson-cs2-optimizer
+```
+
 `SHA256` of `Optimize-CS2.ps1`:
 
 ```
 {{SHA}}
 ```
+
+VirusTotal reports (the files are uploaded by the release workflow; a report may take a minute to populate after publish):
+
+{{VIRUSTOTAL}}
+
+See [SECURITY.md](https://github.com/bg9m9r/bgamerson-cs2-optimizer/blob/main/SECURITY.md) for what the script touches, what it never does, and the note about why a couple of heuristic engines may flag the Defender-exclusion step.
