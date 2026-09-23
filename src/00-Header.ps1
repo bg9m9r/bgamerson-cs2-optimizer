@@ -129,7 +129,7 @@ $ErrorActionPreference = 'Stop'
 # Bumped for every release. The release workflow refuses to publish a tag
 # whose number does not match this constant, so a stale value cannot ship and
 # make the update check nag users about their own version.
-$script:OptVersion = '1.0.9'
+$script:OptVersion = '1.0.10'
 
 # '#Requires -Version 5.1' does NOT exclude PowerShell 7 - 7.x satisfies ">= 5.1".
 # Under PS7 the Appx, DISM, MMAgent, NetAdapter, Defender, BitLocker,
