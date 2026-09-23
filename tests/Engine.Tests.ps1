@@ -719,10 +719,29 @@ Describe 'Regressions from the first full Experimental run' {
             $r2 = Set-OptRegistryValue -State $state -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -Name 'AllowNewsAndInterests' `
                 -Type DWord -Value 0 -Section '8.7' -Tier 'Aggressive' -Title 'Widgets'
             $r2.Action | Should -Be 'Failed'
-            # No ACL cleanup: the deny covers SetValue only, so the sandbox
-            # teardown can still delete the key.
         }
-        finally { Remove-Cs2OptTestState -State $state }
+        finally {
+            # Lift the deny through the .NET API before teardown. Set-Acl opens
+            # the key with full access (which the deny now blocks), and a
+            # DeleteSubKeyTree cannot walk a key it cannot open, so without
+            # this the sandbox would leak a key per test run.
+            try {
+                $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey('CurrentUser', 'Default')
+                $k = $base.OpenSubKey("$($state['SandboxRoot'])\HKLM\SOFTWARE\Policies\Microsoft\Dsh",
+                        [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+                        [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor [System.Security.AccessControl.RegistryRights]::ReadKey)
+                if ($k) {
+                    $sec = $k.GetAccessControl()
+                    foreach ($rule in @($sec.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]) | Where-Object { $_.AccessControlType -eq 'Deny' })) {
+                        [void]$sec.RemoveAccessRule($rule)
+                    }
+                    $k.SetAccessControl($sec); $k.Dispose()
+                }
+                $base.Dispose()
+            }
+            catch { }
+            Remove-Cs2OptTestState -State $state
+        }
     }
 
     It 'does not re-apply the live mouse refresh when no 6.1 value changed' {
