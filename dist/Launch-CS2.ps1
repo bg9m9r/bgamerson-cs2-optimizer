@@ -33,6 +33,12 @@
     How long to wait for cs2.exe to appear after asking Steam to launch it.
     Steam updates or first-run shader compilation can make this slow.
 
+.PARAMETER ApplyTimeoutSeconds
+    How long to keep retrying the affinity change once cs2.exe exists. Early
+    in startup the process can refuse the change ("Access is denied") and a
+    retry a few seconds later succeeds, so a refusal is retried every
+    2 seconds until this budget runs out rather than treated as final.
+
 .PARAMETER NoLaunch
     Skip the Steam launch and only apply the mask to an already-running
     cs2.exe.
@@ -44,6 +50,7 @@
 [CmdletBinding()]
 param(
     [int]$TimeoutSeconds = 180,
+    [int]$ApplyTimeoutSeconds = 120,
     [switch]$NoLaunch
 )
 
@@ -98,22 +105,131 @@ function Get-Cs2AffinityPlan {
 }
 
 function Set-Cs2Affinity {
+    <#
+        One attempt on one process. Never throws and never prints - the caller
+        decides what a failure means, because most of them are transient.
+
+        Returns @{ Ok; Changed; Before; Error }. Before is $null when even
+        reading the current mask was refused.
+    #>
     [CmdletBinding()]
-    [OutputType([bool])]
+    [OutputType([hashtable])]
     param(
         [Parameter(Mandatory)][System.Diagnostics.Process]$Process,
         [Parameter(Mandatory)][int64]$Mask
     )
 
+    $before = $null
     try {
+        $before = [int64]$Process.ProcessorAffinity
+        if ($before -eq $Mask) {
+            return @{ Ok = $true; Changed = $false; Before = $before; Error = $null }
+        }
         $Process.ProcessorAffinity = [IntPtr]$Mask
         # Read back rather than trusting the setter.
         $Process.Refresh()
-        return ([int64]$Process.ProcessorAffinity -eq $Mask)
+        $after = [int64]$Process.ProcessorAffinity
+        if ($after -eq $Mask) {
+            return @{ Ok = $true; Changed = $true; Before = $before; Error = $null }
+        }
+        return @{ Ok = $false; Changed = $false; Before = $before
+                  Error = ('read-back shows 0x{0:X}, not 0x{1:X}' -f $after, $Mask) }
     }
     catch {
-        Write-Host "  Could not set affinity on PID $($Process.Id): $($_.Exception.Message)" -ForegroundColor Yellow
-        return $false
+        return @{ Ok = $false; Changed = $false; Before = $before; Error = $_.Exception.Message }
+    }
+}
+
+function Invoke-Cs2AffinityApply {
+    <#
+        Keeps applying the mask until every live cs2.exe carries it, or the
+        budget runs out.
+
+        Why a loop and not one attempt: right after launch, SetProcessAffinityMask
+        on cs2.exe can come back "Access is denied" (or the process object can
+        go stale if the game re-launches itself), and simply running the
+        launcher again a few seconds later succeeds. So the loop does exactly
+        that - re-resolves cs2.exe from scratch on every pass, retries, and only
+        gives up at the deadline. The process list is re-queried each pass on
+        purpose: a Process object whose handle was refused once stays refused.
+
+        Success is only declared after two consecutive clean passes separated
+        by SettleMilliseconds, so a PID that appears (or re-appears) right after
+        the first clean pass still gets the mask.
+
+        ResolveProcesses is a scriptblock returning the current cs2 processes;
+        it is a parameter so tests can substitute something that is not a game.
+
+        Returns @{ Ok; Attempts; Applied; LastError }. Applied is a list of
+        "PID: 0xBEFORE -> 0xAFTER" strings for the console.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)][int64]$Mask,
+        [Parameter(Mandatory)][int]$TimeoutSeconds,
+        [int]$RetryMilliseconds = 2000,
+        [int]$SettleMilliseconds = 3000,
+        [int]$ExitGraceMilliseconds = 10000,
+        [scriptblock]$ResolveProcesses = { @(Get-Process -Name 'cs2' -ErrorAction SilentlyContinue) }
+    )
+
+    $deadline  = (Get-Date).AddSeconds($TimeoutSeconds)
+    $attempts  = 0
+    $applied   = New-Object System.Collections.ArrayList
+    $reported  = New-Object System.Collections.ArrayList
+    $lastError = $null
+    $cleanPasses = 0
+    $missingMs = 0
+
+    while ($true) {
+        $attempts++
+        $procs = @(& $ResolveProcesses)
+        $passOk = $procs.Count -gt 0
+
+        if ($procs.Count -eq 0) {
+            $lastError = 'cs2.exe is not running'
+            # The game crashing or being closed should not pin the console for
+            # the whole budget - but allow a short gap for a self-relaunch.
+            $missingMs += $RetryMilliseconds
+            if ($missingMs -gt $ExitGraceMilliseconds) {
+                return @{ Ok = $false; Attempts = $attempts; Applied = $applied; LastError = 'cs2.exe exited' }
+            }
+        }
+        else { $missingMs = 0 }
+
+        foreach ($p in $procs) {
+            $r = Set-Cs2Affinity -Process $p -Mask $Mask
+            if ($r.Ok) {
+                if ($r.Changed) {
+                    [void]$applied.Add(('PID {0}: 0x{1:X} -> 0x{2:X}' -f $p.Id, $r.Before, $Mask))
+                }
+                continue
+            }
+            $passOk = $false
+            $lastError = 'PID {0}: {1}' -f $p.Id, $r.Error
+            # Say it once per distinct message, not once per retry.
+            if ($reported -notcontains $lastError) {
+                [void]$reported.Add($lastError)
+                Write-Host "  $lastError" -ForegroundColor Yellow
+                Write-Host "  (normal while the game is still starting - retrying for up to $TimeoutSeconds s)" -ForegroundColor DarkGray
+            }
+        }
+
+        if ($passOk) {
+            $cleanPasses++
+            if ($cleanPasses -ge 2) {
+                return @{ Ok = $true; Attempts = $attempts; Applied = $applied; LastError = $null }
+            }
+            if ($SettleMilliseconds -gt 0) { Start-Sleep -Milliseconds $SettleMilliseconds }
+            continue
+        }
+
+        $cleanPasses = 0
+        if ((Get-Date) -ge $deadline) {
+            return @{ Ok = $false; Attempts = $attempts; Applied = $applied; LastError = $lastError }
+        }
+        if ($RetryMilliseconds -gt 0) { Start-Sleep -Milliseconds $RetryMilliseconds }
     }
 }
 
@@ -169,26 +285,28 @@ if (-not $cs2 -or $cs2.Count -eq 0) {
     exit 1
 }
 
-# Give the process a moment to finish early init before touching it.
-Start-Sleep -Seconds 2
+# --- apply (with retry) ------------------------------------------------------
+Write-Host ("  cs2.exe is up (PID {0}) - applying mask 0x{1:X}..." -f (($cs2 | ForEach-Object { $_.Id }) -join ', '), $plan.Mask) -ForegroundColor Gray
 
-# --- apply -------------------------------------------------------------------
-$ok = $true
-foreach ($p in $cs2) {
-    $before = [int64]$p.ProcessorAffinity
-    if ($before -eq $plan.Mask) {
-        Write-Host ("  PID {0}: affinity already 0x{1:X} - nothing to do" -f $p.Id, $before) -ForegroundColor Gray
-        continue
-    }
-    if (Set-Cs2Affinity -Process $p -Mask $plan.Mask) {
-        Write-Host ("  PID {0}: affinity 0x{1:X} -> 0x{2:X} (logical CPU {3} excluded)" -f `
-            $p.Id, $before, $plan.Mask, ($plan.ExcludedCpus -join '+')) -ForegroundColor Green
-    }
-    else { $ok = $false }
+$result = Invoke-Cs2AffinityApply -Mask $plan.Mask -TimeoutSeconds $ApplyTimeoutSeconds
+
+foreach ($line in $result.Applied) {
+    Write-Host ("  {0} (logical CPU {1} excluded)" -f $line, ($plan.ExcludedCpus -join '+')) -ForegroundColor Green
 }
 
-if ($ok) {
+if ($result.Ok) {
+    if ($result.Applied.Count -eq 0) {
+        Write-Host ("  Affinity already 0x{0:X} - nothing to do" -f $plan.Mask) -ForegroundColor Gray
+    }
+    elseif ($result.Attempts -gt 2) {
+        Write-Host "  Succeeded on attempt $($result.Attempts)." -ForegroundColor Gray
+    }
     Write-Host '  Done. This lasts until the game exits; launching normally resets it.' -ForegroundColor Gray
     exit 0
+}
+
+Write-Host "  Gave up after $($result.Attempts) attempts: $($result.LastError)" -ForegroundColor Yellow
+if ($result.LastError -ne 'cs2.exe exited') {
+    Write-Host '  Once the game is fully loaded, run Launch-CS2.cmd -NoLaunch to apply the mask.' -ForegroundColor Yellow
 }
 exit 1

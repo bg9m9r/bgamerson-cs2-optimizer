@@ -110,6 +110,7 @@ Honest details:
 - The exclusion lasts until the game exits. Launching normally resets it.
 - On CPUs with fewer than 6 physical cores it launches without changing affinity — losing 1 of 4 cores costs more than core 0 contention.
 - If the game is already running: `Launch-CS2.cmd -NoLaunch` just applies the mask.
+- Right after launch, `cs2.exe` can refuse the change with *Access is denied* and then accept it a few seconds later. The launcher treats that as transient: it re-finds the process and retries every 2 s for up to 2 minutes (`-ApplyTimeoutSeconds`), and only declares success after two consecutive clean checks. The console only pauses if the retries run out.
 - Whether this helps is measurable but small — treat it as an A/B experiment (fixed demo playback, 1%/0.1% lows), not a guaranteed win.
 
 ---

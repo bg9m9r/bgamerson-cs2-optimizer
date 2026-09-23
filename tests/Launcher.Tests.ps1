@@ -71,6 +71,63 @@ Describe 'Launch-CS2 affinity plan' {
     }
 }
 
+Describe 'Launch-CS2 affinity retry' {
+    # No game is launched here. The test host itself stands in for cs2.exe:
+    # with Mask equal to its current affinity the loop runs resolve / verify /
+    # settle for real without changing anything. The Idle process (PID 0)
+    # stands in for the "Access is denied" case - nothing can open it with
+    # SET_INFORMATION, so it is a repeatable refusal with no risk of actually
+    # changing anything.
+    BeforeAll {
+        $script:SelfMask = [int64](Get-Process -Id $PID).ProcessorAffinity
+    }
+
+    It 'is satisfied by a process that already carries the mask, after two clean passes' {
+        $r = Invoke-Cs2AffinityApply -Mask $script:SelfMask -TimeoutSeconds 5 `
+            -RetryMilliseconds 10 -SettleMilliseconds 0 `
+            -ResolveProcesses { @(Get-Process -Id $PID) }
+        $r.Ok | Should -BeTrue
+        @($r.Applied).Count | Should -Be 0
+        $r.Attempts | Should -Be 2
+    }
+
+    It 'keeps polling while cs2.exe is absent and succeeds once it appears' {
+        $script:resolveCalls = 0
+        $r = Invoke-Cs2AffinityApply -Mask $script:SelfMask -TimeoutSeconds 5 `
+            -RetryMilliseconds 10 -SettleMilliseconds 0 `
+            -ResolveProcesses { $script:resolveCalls++; if ($script:resolveCalls -le 3) { @() } else { @(Get-Process -Id $PID) } }
+        $r.Ok | Should -BeTrue
+        $r.Attempts | Should -BeGreaterThan 3
+    }
+
+    It 'retries a refusal until the deadline instead of failing on the first one' {
+        $r = Invoke-Cs2AffinityApply -Mask 0xFE -TimeoutSeconds 1 `
+            -RetryMilliseconds 50 -SettleMilliseconds 0 `
+            -ResolveProcesses { @(Get-Process -Id 0) }
+        $r.Ok | Should -BeFalse
+        $r.Attempts | Should -BeGreaterThan 3
+        $r.LastError | Should -Match '^PID 0:'
+    }
+
+    It 'gives up early when the game is gone, rather than waiting out the budget' {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $r = Invoke-Cs2AffinityApply -Mask 0xFE -TimeoutSeconds 60 `
+            -RetryMilliseconds 10 -SettleMilliseconds 0 -ExitGraceMilliseconds 30 `
+            -ResolveProcesses { @() }
+        $sw.Stop()
+        $r.Ok | Should -BeFalse
+        $r.LastError | Should -Be 'cs2.exe exited'
+        $sw.Elapsed.TotalSeconds | Should -BeLessThan 5
+    }
+
+    It 'single attempt never throws on a refused process' {
+        $r = Set-Cs2Affinity -Process (Get-Process -Id 0) -Mask 0xFE
+        $r.Ok | Should -BeFalse
+        $r.Changed | Should -BeFalse
+        $r.Error | Should -Not -BeNullOrEmpty
+    }
+}
+
 Describe 'Launch-CS2 dist freshness' {
 
     It 'ships in dist, identical to the launcher source' {
